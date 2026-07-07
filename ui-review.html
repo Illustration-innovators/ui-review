@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Illustrata · UI Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --navy:#284064; --navy2:#3C5679; --blue:#306EC6;
+    --paper:#F5F7F9; --card:#FFFFFF; --header:#EDEFF2;
+    --line:#E4E8EE; --line2:#D3D9E2; --muted:#6B7686; --muted-ink:#9AA3B2;
+    --gold:#FEC000; --gold-soft:#FBEFC9; --pin:#E8372E; --good:#2E9E5B;
+  }
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  html,body{font-family:'Montserrat',system-ui,sans-serif;background:var(--paper);color:var(--navy);line-height:1.45;-webkit-font-smoothing:antialiased;min-height:100%;}
+  button{font-family:inherit;cursor:pointer;}
+  a{color:var(--blue);}
+
+  /* Header */
+  .app-header{background:var(--header);padding:16px 26px;}
+  .app-header .inner{max-width:1280px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;}
+  .brand{display:flex;align-items:center;gap:15px;}
+  .brand .divider{border-left:1px solid var(--line2);padding-left:15px;}
+  .brand .eyebrow{font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);}
+  .brand .title{font-size:17px;font-weight:700;color:var(--navy);letter-spacing:-.01em;}
+  .whoami{font-size:12.5px;color:var(--muted);}
+  .whoami b{color:var(--navy);font-weight:600;}
+  .whoami button{background:none;border:none;color:var(--blue);font-size:12px;font-weight:600;padding:0 0 0 8px;}
+  .gradient-bar{height:3px;background:linear-gradient(90deg,var(--navy),var(--blue));}
+
+  /* Buttons */
+  .btn{display:inline-flex;align-items:center;gap:7px;background:var(--navy);color:#fff;border:none;border-radius:9px;padding:9px 15px;font-size:13px;font-weight:600;transition:background .12s;}
+  .btn:hover{background:var(--blue);}
+  .btn.small{padding:6px 11px;font-size:12px;border-radius:8px;}
+  .btn-outline{background:#fff;color:var(--navy);border:1px solid var(--line2);}
+  .btn-outline:hover{background:var(--paper);border-color:var(--navy2);}
+  .btn-ghost{background:none;border:none;color:var(--muted);font-size:12px;font-weight:600;padding:4px 6px;border-radius:6px;}
+  .btn-ghost:hover{background:var(--paper);color:var(--navy);}
+
+  /* Generic layout */
+  .wrap{max-width:1280px;margin:0 auto;padding:26px;}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;}
+  .eyebrow{font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-ink);}
+
+  /* Setup screen */
+  .setup{max-width:640px;margin:60px auto;padding:0 26px;}
+  .setup .card{padding:28px 30px;}
+  .setup h2{font-size:20px;font-weight:700;margin-bottom:8px;}
+  .setup p{font-size:13.5px;color:var(--muted);line-height:1.6;margin-bottom:14px;}
+  .setup code{background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:2px 6px;font-size:12.5px;color:var(--navy);}
+  .setup ol{margin:0 0 4px 18px;font-size:13.5px;color:var(--muted);line-height:1.9;}
+
+  /* Dashboard */
+  .dash-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;gap:12px;flex-wrap:wrap;}
+  .dash-head h1{font-size:22px;font-weight:700;letter-spacing:-.01em;}
+  .ui-list{display:flex;flex-direction:column;gap:12px;}
+  .ui-row{display:flex;align-items:center;gap:18px;padding:16px 18px;}
+  .ui-row .main{flex:1;min-width:0;}
+  .ui-row .ui-title{font-size:15px;font-weight:700;color:var(--navy);margin-bottom:3px;}
+  .ui-row .ui-meta{font-size:12px;color:var(--muted);display:flex;gap:14px;flex-wrap:wrap;}
+  .ui-row .ui-meta .dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px;vertical-align:middle;}
+  .badge{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;padding:2px 7px;border-radius:5px;background:var(--paper);color:var(--muted);border:1px solid var(--line);}
+  .badge.open{background:#FFF3E0;color:#B4690E;border-color:#F3D9A8;}
+  .badge.done{background:#EAF6EE;color:var(--good);border-color:#BFE6CC;}
+  .ui-row .actions{display:flex;gap:8px;align-items:center;flex-shrink:0;flex-wrap:wrap;}
+  .dash-actions{display:flex;gap:10px;}
+  .group{margin-bottom:22px;}
+  .group-head{display:flex;align-items:center;gap:10px;padding:6px 4px;cursor:pointer;user-select:none;border-bottom:1px solid var(--line);margin-bottom:12px;}
+  .group-head .caret{font-size:11px;color:var(--muted);transition:transform .15s;display:inline-block;}
+  .group:not(.collapsed) .group-head .caret{transform:rotate(90deg);}
+  .group-name{font-size:13px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--navy);}
+  .group-count{font-size:11px;font-weight:600;color:var(--muted);background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:1px 9px;}
+  .group-tools{margin-left:auto;display:flex;gap:2px;}
+  .group.collapsed .group-body{display:none;}
+  .group-body{display:flex;flex-direction:column;gap:12px;}
+  .group-empty{font-size:12px;color:var(--muted-ink);padding:8px 4px;}
+  .group-select{border:1px solid var(--line2);border-radius:8px;padding:6px 8px;font-family:inherit;font-size:12px;font-weight:600;color:var(--navy);background:#fff;max-width:160px;}
+  .actions .del{color:var(--muted);font-size:15px;line-height:1;padding:6px 9px;border:1px solid var(--line2);border-radius:8px;background:#fff;}
+  .actions .del:hover{color:var(--pin);border-color:#F3C9C6;background:#FCEBEA;}
+  .empty{padding:48px 20px;text-align:center;color:var(--muted);}
+  .empty .big{font-size:15px;font-weight:600;color:var(--navy);margin-bottom:6px;}
+
+  /* Modal */
+  .modal-back{position:fixed;inset:0;background:rgba(40,64,100,.4);display:flex;align-items:flex-start;justify-content:center;padding:40px 20px;z-index:100;overflow:auto;}
+  .modal{background:#fff;border-radius:16px;width:100%;max-width:560px;padding:24px 26px;box-shadow:0 12px 40px rgba(0,0,0,.25);}
+  .modal h3{font-size:17px;font-weight:700;margin-bottom:4px;}
+  .modal .sub{font-size:12.5px;color:var(--muted);margin-bottom:16px;}
+  .field{margin-bottom:14px;}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--navy);margin-bottom:6px;}
+  .field input[type=text],.field textarea{width:100%;border:1px solid var(--line2);border-radius:9px;padding:10px 12px;font-family:inherit;font-size:13px;color:var(--navy);background:var(--paper);}
+  .field textarea{min-height:150px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;}
+  .field input:focus,.field textarea:focus{outline:none;border-color:var(--blue);background:#fff;}
+  .dropzone{border:2px dashed var(--line2);border-radius:10px;padding:14px;text-align:center;font-size:12px;color:var(--muted);background:var(--paper);margin-bottom:8px;transition:.12s;}
+  .dropzone.hot{border-color:var(--blue);background:#EFF5FD;color:var(--navy);}
+  .radio-row{display:flex;gap:16px;}
+  .radio-row label{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;color:var(--muted);cursor:pointer;}
+  .radio-row input{accent-color:var(--blue);}
+  .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}
+
+  /* Review layout */
+  .review{display:flex;height:calc(100vh - 74px);}
+  .canvas-col{flex:1;min-width:0;overflow:auto;background:#DfE4EA;padding:22px;}
+  .review-topbar{max-width:1220px;margin:0 auto 16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;}
+  .export-btn{margin-left:auto;}
+  .review-topbar .r-title{font-size:15px;font-weight:700;color:var(--navy);}
+  .verselect{border:1px solid var(--line2);border-radius:8px;padding:6px 10px;font-family:inherit;font-size:12.5px;font-weight:600;color:var(--navy);background:#fff;}
+  .pin-toggle{width:100%;justify-content:center;font-size:13px;}
+  .pin-toggle.on{background:var(--pin);}
+  .pin-toggle.on:hover{background:#c22c24;}
+  .pin-help{max-width:1220px;margin:0 auto 12px;font-size:12px;color:var(--navy2);}
+  .pin-help b{color:var(--navy);font-weight:700;}
+  .side-foot{border-top:1px solid var(--line);padding:12px 14px;background:#fff;}
+  .pin-banner{display:none;margin:0 0 9px;background:var(--pin);color:#fff;font-size:12px;font-weight:600;padding:8px 12px;border-radius:8px;text-align:center;}
+  .pin-banner.show{display:block;}
+  @keyframes pinpulse{0%{transform:translate(-50%,-50%) scale(1);}50%{transform:translate(-50%,-50%) scale(1.5);}100%{transform:translate(-50%,-50%) scale(1);}}
+  .pin.pulse{animation:pinpulse .55s ease 2;}
+  .hint{font-size:11.5px;color:var(--navy2);background:#fff;border:1px solid var(--line);border-radius:7px;padding:5px 10px;}
+
+  .browser{max-width:1220px;margin:0 auto;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 6px 28px rgba(40,64,100,.16);}
+  .chrome{background:var(--navy);padding:9px 14px;display:flex;align-items:center;gap:8px;}
+  .chrome .dots{display:flex;gap:6px;}
+  .chrome .dots i{width:11px;height:11px;border-radius:50%;display:block;}
+  .chrome .url{flex:1;background:rgba(255,255,255,.12);border-radius:6px;padding:4px 12px;font-size:11.5px;color:rgba(255,255,255,.75);text-align:center;}
+  .stage{position:relative;}
+  #ui-frame{display:block;width:100%;border:0;background:#fff;}
+  #overlay{position:absolute;inset:0;pointer-events:none;}
+  #overlay.arming{pointer-events:auto;cursor:crosshair;}
+  .pin{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50% 50% 50% 2px;background:var(--pin);color:#fff;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;pointer-events:auto;cursor:pointer;transition:transform .12s;}
+  .pin:hover,.pin.active{transform:translate(-50%,-50%) scale(1.18);}
+  .pin.resolved{background:var(--good);}
+  .sel-btn{position:absolute;transform:translate(-50%,-115%);background:var(--navy);color:#fff;border:none;border-radius:7px;padding:6px 11px;font-size:11.5px;font-weight:600;pointer-events:auto;box-shadow:0 3px 10px rgba(0,0,0,.28);white-space:nowrap;z-index:20;}
+  .sel-btn::after{content:"";position:absolute;left:50%;bottom:-5px;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--navy);}
+
+  /* Comments sidebar */
+  .side{width:390px;flex-shrink:0;background:#fff;border-left:1px solid var(--line);display:flex;flex-direction:column;height:100%;}
+  .side-head{padding:16px 18px;border-bottom:1px solid var(--line);}
+  .side-head .st{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;}
+  .filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
+  .chip{border:1px solid var(--line2);background:#fff;border-radius:20px;padding:4px 11px;font-size:11.5px;font-weight:600;color:var(--muted);}
+  .chip.on{background:var(--navy);color:#fff;border-color:var(--navy);}
+  .filters select{margin-left:auto;border:1px solid var(--line2);border-radius:8px;padding:4px 8px;font-family:inherit;font-size:11.5px;color:var(--navy);background:#fff;}
+  .comments{flex:1;overflow:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px;}
+  .cmt{border:1px solid var(--line);border-radius:11px;padding:11px 13px;background:#fff;transition:border-color .12s,box-shadow .12s;}
+  .cmt.active{border-color:var(--blue);box-shadow:0 0 0 3px rgba(48,110,198,.12);}
+  .cmt.resolved{background:#F7FBF8;}
+  .cmt-top{display:flex;align-items:center;gap:9px;margin-bottom:7px;}
+  .cmt-num{width:21px;height:21px;border-radius:50%;background:var(--pin);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .cmt.resolved .cmt-num{background:var(--good);}
+  .cmt-who{font-size:12.5px;font-weight:700;color:var(--navy);}
+  .cmt-time{font-size:10.5px;color:var(--muted-ink);}
+  .cmt-check{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:var(--muted);cursor:pointer;user-select:none;}
+  .cmt-check input{accent-color:var(--good);width:15px;height:15px;cursor:pointer;}
+  .cmt-quote{font-size:11.5px;color:var(--navy2);background:var(--paper);border-left:2px solid var(--line2);padding:5px 9px;border-radius:0 6px 6px 0;margin-bottom:7px;font-style:italic;}
+  .cmt-body{font-size:13px;color:var(--navy);line-height:1.55;white-space:pre-wrap;word-wrap:break-word;}
+  .cmt-tools{display:flex;gap:10px;margin-top:8px;}
+  .cmt-tools button{background:none;border:none;font-size:11.5px;font-weight:600;color:var(--muted);padding:0;}
+  .cmt-tools button:hover{color:var(--blue);}
+  .replies{margin-top:9px;padding-top:9px;border-top:1px dashed var(--line);display:flex;flex-direction:column;gap:9px;}
+  .reply{padding-left:10px;border-left:2px solid var(--line2);}
+  .reply .cmt-who{font-size:12px;}
+  .reply .cmt-body{font-size:12.5px;}
+  .composer textarea{width:100%;border:1px solid var(--line2);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:12.5px;color:var(--navy);background:var(--paper);resize:vertical;min-height:60px;}
+  .composer textarea:focus{outline:none;border-color:var(--blue);background:#fff;}
+  .composer .row{display:flex;gap:8px;margin-top:8px;align-items:center;}
+  .composer input[type=text]{flex:1;border:1px solid var(--line2);border-radius:8px;padding:7px 10px;font-family:inherit;font-size:12.5px;color:var(--navy);}
+  .reply-open{font-size:11.5px;font-weight:600;color:var(--blue);background:none;border:none;padding:0;margin-top:8px;}
+  .side-empty{text-align:center;color:var(--muted);font-size:12.5px;padding:30px 16px;line-height:1.6;}
+
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--navy);color:#fff;padding:11px 18px;border-radius:10px;font-size:13px;font-weight:600;box-shadow:0 6px 20px rgba(0,0,0,.3);z-index:200;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px);}
+
+  @media(max-width:820px){
+    .review{flex-direction:column;height:auto;}
+    .side{width:100%;border-left:none;border-top:1px solid var(--line);height:auto;}
+    .canvas-col{height:auto;}
+  }
+</style>
+</head>
+<body>
+
+<div class="app-header">
+  <div class="inner">
+    <div class="brand">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 214.09 37.42" height="24" aria-label="Illustrata">
+        <defs><style>.c2{fill:#284064}.c3{fill:#567bb0}</style></defs>
+        <polygon class="c2" points="2.93 3.18 2.93 30.27 8.95 29.57 8.95 3.18 2.93 3.18"/>
+        <polygon class="c3" points="2.93 33.95 8.95 33.95 8.95 29.57 2.93 30.27 2.93 33.95"/>
+        <polygon class="c3" points="14.93 33.95 31.16 33.95 31.16 28.19 20.96 28.19 14.93 28.89 14.93 33.95"/>
+        <polygon class="c2" points="20.95 3.18 14.93 3.18 14.93 28.89 20.96 28.19 20.95 28.19 20.95 3.18"/>
+        <polygon class="c2" points="34.74 3.18 34.74 26.6 40.76 25.91 40.76 3.18 34.74 3.18"/>
+        <polygon class="c3" points="34.74 33.95 50.98 33.95 50.98 28.19 40.76 28.19 40.76 25.91 34.74 26.6 34.74 33.95"/>
+        <path class="c3" d="M68.74,24c0,3.4-2.09,4.67-4.32,4.67-2.36,0-4.28-1.27-4.28-4.67v-.32l-6,.69c.25,6.24,4.39,10.02,10.28,10.02s10.34-4.06,10.34-10.61v-1.79l-6.02.69v1.31h0Z"/>
+        <polygon class="c2" points="68.74 3.18 68.74 22.69 74.76 22 74.76 3.18 68.74 3.18"/>
+        <path class="c2" d="M60.14,3.18h-6.02v20.6c0,.2.02.39.02.59l6-.69V3.18Z"/>
+        <path class="c2" d="M90.56,16.06c-3.05-.96-5.67-1.79-5.67-4.41,0-2.31,1.44-3.54,4.02-3.54s4.19,1.53,4.19,4.8h5.94c0-6.33-4.1-10.3-10.04-10.3s-10.12,3.4-10.12,9.03,4.16,7.62,8.04,8.95l10.39-1.2c-1.77-1.79-4.38-2.61-6.73-3.34h-.02Z"/>
+        <path class="c3" d="M87.42,20.77c3.19,1,5.98,1.83,5.98,4.41s-1.88,3.71-4.41,3.71c-2.66,0-4.5-1.48-4.5-5.06h-6.02c0,6.59,4.28,10.65,10.52,10.65s10.43-3.49,10.43-9.34c0-2.65-.85-4.44-2.12-5.73l-10.39,1.2c.17.06.34.12.51.17h0Z"/>
+        <polygon class="c2" points="120.58 8.99 120.58 3.18 101.73 3.18 101.73 8.99 108.15 8.99 108.15 18.15 114.17 17.46 114.17 8.99 120.58 8.99"/>
+        <polygon class="c3" points="108.15 33.95 114.17 33.95 114.17 17.46 108.15 18.15 108.15 33.95"/>
+        <path class="c2" d="M133.68,3.18h-9.78v13.15l6.02-.69v-6.7h3.01c2.71,0,5.06,1.05,5.06,5.28v.49l5.97-.69c-.11-6.97-4.22-10.84-10.29-10.84h0Z"/>
+        <path class="c3" d="M138,15.1c0,4.06-2.44,5.19-5.06,5.19h-3.01v-4.65l-6.02.69v17.61h6.02v-7.94h3.14l4.15,7.94h6.59l-5.19-9.34c3.32-1.48,5.37-4.67,5.37-9.43v-.87c0-.1,0-.19,0-.28l-5.97.69v.38h0Z"/>
+        <polygon class="c3" points="161.61 22.69 155.19 22.69 157.98 12.41 152.24 13.08 146.11 33.95 152.22 33.95 153.92 27.89 162.87 27.89 164.49 33.95 170.64 33.95 164.2 11.7 158.9 12.31 161.61 22.69"/>
+        <polygon class="c2" points="155.15 3.18 152.24 13.08 157.98 12.41 158.46 10.65 158.9 12.31 164.2 11.7 161.74 3.18 155.15 3.18"/>
+        <polygon class="c3" points="176.05 33.95 182.07 33.95 182.07 9.64 176.05 10.33 176.05 33.95"/>
+        <polygon class="c2" points="169.64 3.18 169.64 8.99 176.05 8.99 176.05 10.33 182.07 9.64 182.07 8.99 187.74 8.99 188.49 8.9 188.49 3.18 169.64 3.18"/>
+        <polygon class="c2" points="202.37 3.18 195.78 3.18 194.29 8.23 203.52 7.17 202.37 3.18"/>
+        <path class="c3" d="M203.52,7.17l-9.23,1.06-7.55,25.72h6.11l1.7-6.07h8.95l1.62,6.07h6.15l-7.75-26.78h0ZM195.82,22.69l3.27-12.05,3.14,12.05h-6.42,0Z"/>
+      </svg>
+      <div class="divider">
+        <div class="eyebrow">Design Review</div>
+        <div class="title" id="hdr-title">UI Review</div>
+      </div>
+    </div>
+    <div class="whoami" id="whoami"></div>
+  </div>
+</div>
+<div class="gradient-bar"></div>
+
+<div id="root"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================================
+   CONFIG — paste your Supabase project values between the quotes, then save.
+   ========================================================================== */
+const SUPABASE_URL      = "https://ylprbrohqhsuknnavdku.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlscHJicm9ocWhzdWtubmF2ZGt1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM0Mjc2OTMsImV4cCI6MjA5OTAwMzY5M30.YTuFD54F7oyIap2Nb03bmrC-EvA_797xVmo9AcClzEk";
+/* ========================================================================== */
+
+const ROOT = document.getElementById('root');
+let sb = null;
+let CURRENT = { view:'dashboard', ui:null, versions:[], version:null, comments:[], channel:null };
+let PIN_ARMED = false;
+let ACTIVE_CMT = null;
+let PENDING_ANCHOR = null;   // anchor captured before composer submit
+let FILTER = { status:'all', author:'all' };
+
+/* ---------- small helpers ---------- */
+const $ = s => document.querySelector(s);
+function esc(t){ return String(t==null?'':t).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function token(){ return (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2)).replace(/-/g,''); }
+function timeAgo(iso){
+  const d=(Date.now()-new Date(iso).getTime())/1000;
+  if(d<60)return'just now'; if(d<3600)return Math.floor(d/60)+'m ago';
+  if(d<86400)return Math.floor(d/3600)+'h ago';
+  if(d<604800)return Math.floor(d/86400)+'d ago';
+  return new Date(iso).toLocaleDateString();
+}
+let _toastT;
+function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove('show'),2200); }
+
+/* ---------- reviewer identity (name once, per device) ---------- */
+function myName(){ return localStorage.getItem('uireview_name')||''; }
+function setName(n){ localStorage.setItem('uireview_name', n.trim()); renderWhoami(); }
+function ensureName(cb){
+  const n=myName();
+  if(n){ cb(n); return; }
+  const entered=prompt("Enter your name (shown on your comments). You'll only be asked once on this device.");
+  if(entered && entered.trim()){ setName(entered.trim()); cb(entered.trim()); }
+}
+function renderWhoami(){
+  const el=$('#whoami'); const n=myName();
+  if(CURRENT.view==='reviewer'||CURRENT.view==='review'){
+    el.innerHTML = n
+      ? `Commenting as <b>${esc(n)}</b><button onclick="changeName()">change</button>`
+      : `<button onclick="changeName()">Set your name</button>`;
+  } else el.innerHTML='';
+}
+function changeName(){ const n=prompt("Your name:", myName()); if(n&&n.trim()){ setName(n.trim()); if(CURRENT.version) renderComments(); } }
+
+/* ============================================================================
+   BOOT
+   ========================================================================== */
+function boot(){
+  // Silence the harmless ResizeObserver loop warning at the top level too.
+  window.addEventListener('error', function(e){
+    if(e && e.message && e.message.indexOf('ResizeObserver loop')>=0){ e.stopImmediatePropagation(); e.preventDefault(); }
+  });
+  if(!SUPABASE_URL || !SUPABASE_ANON_KEY){ renderSetup(); return; }
+  try{ sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
+  catch(e){ renderSetup(); return; }
+  const params = new URLSearchParams(location.search);
+  const r = params.get('r');
+  if(r) openReview(r, false);
+  else renderDashboard();
+}
+
+/* ============================================================================
+   SETUP SCREEN
+   ========================================================================== */
+function renderSetup(){
+  $('#hdr-title').textContent='Setup';
+  ROOT.innerHTML = `
+  <div class="setup"><div class="card">
+    <h2>Connect your database</h2>
+    <p>This app stores UIs and comments in a free <b>Supabase</b> project so everyone with a link sees the same review. It isn't connected yet.</p>
+    <ol>
+      <li>Create a free project at <code>supabase.com</code></li>
+      <li>Run the setup SQL (provided separately) to create the tables</li>
+      <li>Open this file in a text editor and paste your <b>Project URL</b> and <b>anon public key</b> into the <code>CONFIG</code> block near the top of the script</li>
+      <li>Save and re-open the file</li>
+    </ol>
+    <p style="margin-top:16px;margin-bottom:0;">Once connected, this screen is replaced by the review dashboard.</p>
+  </div></div>`;
+  renderWhoami();
+}
+
+/* ============================================================================
+   DASHBOARD  (admin — anyone with the app file)
+   ========================================================================== */
+let DASH = { uis:[], groups:[], vByUI:{}, cAgg:{} };
+
+async function renderDashboard(){
+  CURRENT.view='dashboard'; cleanupChannel();
+  $('#hdr-title').textContent='UI Review'; renderWhoami();
+  ROOT.innerHTML = `
+    <div class="wrap">
+      <div class="dash-head">
+        <h1>UIs out for review</h1>
+        <div class="dash-actions">
+          <button class="btn-outline btn" onclick="openNewGroup()">+ New group</button>
+          <button class="btn" onclick="openAddUI()">+ Add a UI</button>
+        </div>
+      </div>
+      <div id="ui-list" class="ui-list"><div class="empty">Loading…</div></div>
+    </div>`;
+
+  const [uis, versions, comments, groups] = await Promise.all([
+    sb.from('uis').select('*').order('created_at',{ascending:false}),
+    sb.from('versions').select('id,ui_id,version_number,created_at'),
+    sb.from('comments').select('id,version_id,done,parent_id'),
+    sb.from('groups').select('*').order('created_at',{ascending:true})
+  ]);
+  if(uis.error){ $('#ui-list').innerHTML=`<div class="empty"><div class="big">Couldn't load</div>${esc(uis.error.message)}<br><br>Check that the tables exist and your keys are correct.</div>`; return; }
+
+  const vByUI={}; (versions.data||[]).forEach(v=>{ (vByUI[v.ui_id]=vByUI[v.ui_id]||[]).push(v); });
+  const vIds={}; (versions.data||[]).forEach(v=>vIds[v.id]=v.ui_id);
+  const cAgg={}; (comments.data||[]).forEach(c=>{
+    if(c.parent_id) return;
+    const uid=vIds[c.version_id]; if(!uid) return;
+    const a=cAgg[uid]=cAgg[uid]||{total:0,open:0};
+    a.total++; if(!c.done) a.open++;
+  });
+
+  DASH = { uis:uis.data, groups:(groups.error?[]:(groups.data||[])), vByUI, cAgg };
+
+  if(!uis.data.length){ $('#ui-list').innerHTML=`<div class="empty"><div class="big">Nothing here yet</div>Add a UI to start collecting review comments.</div>`; return; }
+  renderGroupedList();
+}
+
+function findUI(id){ return (DASH.uis||[]).find(u=>u.id===id); }
+function findGroup(id){ return (DASH.groups||[]).find(g=>g.id===id); }
+
+function getCollapsed(){ try{ return JSON.parse(localStorage.getItem('uireview_collapsed')||'[]'); }catch(e){ return []; } }
+function toggleGroup(key){
+  const arr=getCollapsed(); const i=arr.indexOf(key);
+  if(i>=0) arr.splice(i,1); else arr.push(key);
+  localStorage.setItem('uireview_collapsed', JSON.stringify(arr));
+  const sec=document.querySelector('.group[data-key="'+CSS.escape(key)+'"]');
+  if(sec) sec.classList.toggle('collapsed');
+}
+
+function renderGroupedList(){
+  const {uis,groups}=DASH;
+  const collapsed=getCollapsed();
+  const byGroup={}, ungrouped=[];
+  uis.forEach(u=>{ if(u.group_id && groups.some(g=>g.id===u.group_id)) (byGroup[u.group_id]=byGroup[u.group_id]||[]).push(u); else ungrouped.push(u); });
+  let html='';
+  if(ungrouped.length) html+=sectionHTML('__ungrouped','Ungrouped',ungrouped,collapsed,false);
+  groups.forEach(g=>{ html+=sectionHTML(g.id,g.name,byGroup[g.id]||[],collapsed,true); });
+  $('#ui-list').innerHTML = html || `<div class="empty">Nothing to show.</div>`;
+}
+
+function sectionHTML(key,name,arr,collapsed,isGroup){
+  const isCol=collapsed.includes(key);
+  const rows = arr.length ? arr.map(rowHTML).join('') : `<div class="group-empty">No UIs here yet — assign one with its group dropdown.</div>`;
+  return `<div class="group ${isCol?'collapsed':''}" data-key="${esc(key)}">
+    <div class="group-head" onclick="toggleGroup('${esc(key)}')">
+      <span class="caret">▸</span>
+      <span class="group-name">${esc(name)}</span>
+      <span class="group-count">${arr.length}</span>
+      ${isGroup?`<span class="group-tools">
+        <button class="btn-ghost" onclick="event.stopPropagation();renameGroup('${key}')">Rename</button>
+        <button class="btn-ghost" onclick="event.stopPropagation();deleteGroup('${key}')">Delete group</button>
+      </span>`:''}
+    </div>
+    <div class="group-body">${rows}</div>
+  </div>`;
+}
+
+function rowHTML(u){
+  const {groups,vByUI,cAgg}=DASH;
+  const vs=(vByUI[u.id]||[]).slice().sort((a,b)=>b.version_number-a.version_number);
+  const latest=vs[0]?vs[0].version_number:1;
+  const agg=cAgg[u.id]||{total:0,open:0};
+  const opts=`<option value="">Ungrouped</option>`+
+    groups.map(g=>`<option value="${g.id}" ${u.group_id===g.id?'selected':''}>${esc(g.name)}</option>`).join('')+
+    `<option value="__new">+ New group…</option>`;
+  return `<div class="card ui-row">
+    <div class="main">
+      <div class="ui-title">${esc(u.title)}</div>
+      <div class="ui-meta">
+        <span><span class="dot" style="background:var(--blue)"></span>v${latest} · ${vs.length} version${vs.length===1?'':'s'}</span>
+        <span>${agg.total} comment${agg.total===1?'':'s'}</span>
+        <span class="badge ${agg.open?'open':'done'}">${agg.open?agg.open+' open':'all resolved'}</span>
+        <span>added ${timeAgo(u.created_at)}</span>
+      </div>
+    </div>
+    <div class="actions">
+      <select class="group-select" title="Group" onchange="moveUI('${u.id}',this.value)">${opts}</select>
+      <button class="btn-outline btn small" onclick="copyLink('${u.share_token}')">Copy link</button>
+      <button class="btn-outline btn small" onclick="openAddVersion('${u.id}')">Add version</button>
+      <button class="btn small" onclick="openReview('${u.share_token}', true)">Open review</button>
+      <button class="del" title="Delete UI" onclick="deleteUI('${u.id}')">🗑</button>
+    </div>
+  </div>`;
+}
+
+/* ---------- group + delete operations ---------- */
+async function openNewGroup(){
+  const name=prompt('New group name (e.g. Done, Prosperity, On hold):');
+  if(!name||!name.trim()) return;
+  const ins=await sb.from('groups').insert({name:name.trim()});
+  if(ins.error){ toast(groupErr(ins.error)); return; }
+  renderDashboard();
+}
+async function renameGroup(gid){
+  const g=findGroup(gid); if(!g) return;
+  const name=prompt('Rename group:', g.name);
+  if(!name||!name.trim()) return;
+  const up=await sb.from('groups').update({name:name.trim()}).eq('id',gid);
+  if(up.error){ toast('Error: '+up.error.message); return; }
+  renderDashboard();
+}
+async function deleteGroup(gid){
+  const g=findGroup(gid); if(!g) return;
+  if(!confirm(`Delete group "${g.name}"? Its UIs move to Ungrouped — they are NOT deleted.`)) return;
+  const del=await sb.from('groups').delete().eq('id',gid);
+  if(del.error){ toast('Error: '+del.error.message); return; }
+  toast('Group deleted'); renderDashboard();
+}
+async function moveUI(uiId, val){
+  if(val==='__new'){
+    const name=prompt('New group name:');
+    if(!name||!name.trim()){ renderDashboard(); return; }
+    const ins=await sb.from('groups').insert({name:name.trim()}).select().single();
+    if(ins.error){ toast(groupErr(ins.error)); renderDashboard(); return; }
+    val=ins.data.id;
+  }
+  const up=await sb.from('uis').update({group_id: val===''?null:val}).eq('id',uiId);
+  if(up.error){ toast(groupErr(up.error)); return; }
+  toast('Moved'); renderDashboard();
+}
+async function deleteUI(uiId){
+  const u=findUI(uiId); if(!u) return;
+  if(!confirm(`Delete "${u.title}" and all of its versions and comments? This can't be undone.`)) return;
+  const del=await sb.from('uis').delete().eq('id',uiId);
+  if(del.error){ toast('Error: '+del.error.message); return; }
+  toast('UI deleted'); renderDashboard();
+}
+function groupErr(e){
+  const m=e.message||String(e);
+  if(/relation .*groups.* does not exist|column .*group_id.* does not exist|schema cache/i.test(m))
+    return 'Groups need a quick database update first — run the groups SQL, then reload.';
+  return 'Error: '+m;
+}
+
+function copyLink(tok){
+  const url = location.origin + location.pathname + '?r=' + tok;
+  navigator.clipboard.writeText(url).then(()=>toast('Share link copied')).catch(()=>prompt('Copy this link:',url));
+}
+
+/* ---------- Add UI / Add version modals ---------- */
+function detectType(src){
+  const s=src.trim();
+  if(/export\s+default/.test(s) || /from\s*['"]react['"]/.test(s) || /import\s+React/.test(s)) return 'jsx';
+  if(/^<!doctype/i.test(s) || /^<html[\s>]/i.test(s)) return 'html';
+  if(/useState\s*\(|useEffect\s*\(/.test(s)) return 'jsx';
+  return 'html';
+}
+
+function modalShell(inner){
+  const back=document.createElement('div'); back.className='modal-back';
+  back.innerHTML=`<div class="modal">${inner}</div>`;
+  back.addEventListener('mousedown',e=>{ if(e.target===back) back.remove(); });
+  document.body.appendChild(back); return back;
+}
+
+function sourceFormHTML(kind){
+  return `
+    <div class="field">
+      <label>Title</label>
+      <input type="text" id="f-title" placeholder="e.g. Prosperity agent portal — landing" />
+    </div>
+    <div class="field">
+      <label>UI source</label>
+      <div class="dropzone" id="dz">Drag an <b>.html</b> or <b>.jsx</b> file here, or paste below</div>
+      <textarea id="f-src" placeholder="Paste HTML or JSX (React) source here…"></textarea>
+    </div>
+    <div class="field">
+      <label>How should it render?</label>
+      <div class="radio-row">
+        <label><input type="radio" name="rtype" value="auto" checked> Auto-detect</label>
+        <label><input type="radio" name="rtype" value="html"> HTML</label>
+        <label><input type="radio" name="rtype" value="jsx"> JSX / React</label>
+      </div>
+    </div>`;
+}
+
+function wireDropzone(back){
+  const dz=back.querySelector('#dz'), ta=back.querySelector('#f-src');
+  ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('hot');}));
+  ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('hot');}));
+  dz.addEventListener('drop',e=>{
+    const f=e.dataTransfer.files[0]; if(!f) return;
+    const rd=new FileReader();
+    rd.onload=()=>{ ta.value=rd.result;
+      const t=/\.jsx?$/i.test(f.name)&&/\.jsx$/i.test(f.name)?'jsx':detectType(rd.result);
+      const radio=back.querySelector(`input[name=rtype][value=${t}]`); if(radio) radio.checked=true;
+      if(!back.querySelector('#f-title').value) back.querySelector('#f-title').value=f.name.replace(/\.[^.]+$/,'');
+    };
+    rd.readAsText(f);
+  });
+}
+function chosenType(back, src){
+  const v=back.querySelector('input[name=rtype]:checked').value;
+  return v==='auto'?detectType(src):v;
+}
+
+function openAddUI(){
+  const back=modalShell(`
+    <h3>Add a UI for review</h3>
+    <div class="sub">Creates one permanent share link. You can upload more versions to it later.</div>
+    ${sourceFormHTML()}
+    <div class="modal-actions">
+      <button class="btn-outline btn" onclick="this.closest('.modal-back').remove()">Cancel</button>
+      <button class="btn" id="f-save">Create & get link</button>
+    </div>`);
+  wireDropzone(back);
+  back.querySelector('#f-save').onclick=async()=>{
+    const title=back.querySelector('#f-title').value.trim();
+    const src=back.querySelector('#f-src').value;
+    if(!title){ toast('Add a title'); return; }
+    if(!src.trim()){ toast('Add the UI source'); return; }
+    const rtype=chosenType(back, src);
+    const tok=token();
+    const ins=await sb.from('uis').insert({title, share_token:tok}).select().single();
+    if(ins.error){ toast('Error: '+ins.error.message); return; }
+    const v=await sb.from('versions').insert({ui_id:ins.data.id, version_number:1, source:src, render_type:rtype});
+    if(v.error){ toast('Error: '+v.error.message); return; }
+    back.remove();
+    const url=location.origin+location.pathname+'?r='+tok;
+    navigator.clipboard.writeText(url).catch(()=>{});
+    toast('Created — share link copied');
+    renderDashboard();
+  };
+}
+
+function openAddVersion(uiId){
+  const u=findUI(uiId); if(!u) return;
+  const vs=(DASH.vByUI[uiId]||[]).slice().sort((a,b)=>b.version_number-a.version_number);
+  const latest=vs[0]?vs[0].version_number:1;
+  const back=modalShell(`
+    <h3>Add a new version</h3>
+    <div class="sub">to <b>${esc(u.title)}</b> — this becomes v${latest+1}. The share link stays the same; reviewers see the latest by default.</div>
+    ${sourceFormHTML()}
+    <div class="modal-actions">
+      <button class="btn-outline btn" onclick="this.closest('.modal-back').remove()">Cancel</button>
+      <button class="btn" id="f-save">Add v${latest+1}</button>
+    </div>`);
+  wireDropzone(back);
+  back.querySelector('#f-save').onclick=async()=>{
+    const src=back.querySelector('#f-src').value;
+    if(!src.trim()){ toast('Add the UI source'); return; }
+    const rtype=chosenType(back, src);
+    const v=await sb.from('versions').insert({ui_id:uiId, version_number:latest+1, source:src, render_type:rtype});
+    if(v.error){ toast('Error: '+v.error.message); return; }
+    back.remove(); toast('v'+(latest+1)+' added'); renderDashboard();
+  };
+}
+
+/* ============================================================================
+   REVIEW VIEW  (reviewer link, or admin "Open review")
+   ========================================================================== */
+async function openReview(tok, isAdmin){
+  CURRENT.view = isAdmin ? 'review' : 'reviewer';
+  cleanupChannel();
+  ROOT.innerHTML = `<div class="wrap"><div class="empty">Loading review…</div></div>`;
+  const ui=await sb.from('uis').select('*').eq('share_token',tok).single();
+  if(ui.error||!ui.data){ ROOT.innerHTML=`<div class="wrap"><div class="empty"><div class="big">Link not found</div>This review link is invalid or was removed.</div></div>`; $('#hdr-title').textContent='UI Review'; return; }
+  const vs=await sb.from('versions').select('*').eq('ui_id',ui.data.id).order('version_number',{ascending:true});
+  CURRENT.ui=ui.data; CURRENT.versions=vs.data||[];
+  CURRENT.version = CURRENT.versions[CURRENT.versions.length-1] || null;
+  $('#hdr-title').textContent = ui.data.title;
+  renderReviewShell(isAdmin);
+  await loadVersion();
+  subscribeRealtime();
+}
+
+function renderReviewShell(isAdmin){
+  renderWhoami();
+  const vs=CURRENT.versions;
+  const verOpts=vs.slice().reverse().map(v=>`<option value="${v.id}" ${v.id===CURRENT.version?.id?'selected':''}>Version ${v.version_number}${v.version_number===vs.length?' (latest)':''}</option>`).join('');
+  ROOT.innerHTML = `
+    <div class="review">
+      <div class="canvas-col">
+        <div class="review-topbar">
+          ${isAdmin?'<button class="btn-outline btn small" onclick="renderDashboard()">← Dashboard</button>':''}
+          <span class="r-title">${esc(CURRENT.ui.title)}</span>
+          <select class="verselect" id="ver" onchange="switchVersion(this.value)">${verOpts}</select>
+          ${isAdmin?'<button class="btn-outline btn small export-btn" onclick="exportForClaude()">⬇ Export for Claude Code</button>':''}
+        </div>
+        <div class="pin-help" id="pin-help">Add feedback two ways: <b>select text</b> in the UI and click the popup, or use <b>📍 Drop a comment pin</b> (bottom of the comments panel) to mark any spot.</div>
+        <div class="browser">
+          <div class="chrome"><span class="dots"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="url">${esc(CURRENT.ui.title)}</span></div>
+          <div class="stage">
+            <iframe id="ui-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-modals"></iframe>
+            <div id="overlay"></div>
+          </div>
+        </div>
+      </div>
+      <div class="side">
+        <div class="side-head">
+          <div class="st">Comments</div>
+          <div class="filters">
+            <button class="chip on" data-st="all" onclick="setFilter('status','all',this)">All</button>
+            <button class="chip" data-st="open" onclick="setFilter('status','open',this)">Open</button>
+            <button class="chip" data-st="done" onclick="setFilter('status','done',this)">Done</button>
+            <select id="author-filter" onchange="setAuthorFilter(this.value)"><option value="all">Everyone</option></select>
+          </div>
+        </div>
+        <div class="comments" id="comments"></div>
+        <div class="side-foot">
+          <div class="pin-banner" id="pin-banner">Now click anywhere on the UI to place your pin — Esc to cancel.</div>
+          <button class="btn pin-toggle" id="pinbtn" onclick="togglePin()">📍 Drop a comment pin</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function switchVersion(vid){
+  const v=CURRENT.versions.find(x=>x.id===vid); if(!v) return;
+  CURRENT.version=v; ACTIVE_CMT=null;
+  loadVersion(); subscribeRealtime();
+}
+
+/* ---------- export comments for Claude Code ---------- */
+function anchorDesc(c){
+  let a; try{ a=JSON.parse(c.anchor||'{}'); }catch(e){ a={}; }
+  if(a.quote) return 'Selected text in the UI: "'+a.quote+'"';
+  if(a.xFrac!=null) return 'Pinned location on the page (~'+Math.round(a.xFrac*100)+'% across, ~'+Math.round(a.yFrac*100)+'% down)';
+  return 'General comment';
+}
+function exportForClaude(){
+  if(!CURRENT.version){ toast('Nothing to export'); return; }
+  const tops=topLevel();
+  const open=tops.filter(c=>!c.done), done=tops.filter(c=>c.done);
+  const L=[];
+  L.push('# UI Review — '+CURRENT.ui.title);
+  L.push('Version '+CURRENT.version.version_number+'  ·  exported '+new Date().toLocaleString());
+  L.push('');
+  L.push(tops.length+' comment(s): '+open.length+' open, '+done.length+' done.');
+  L.push('');
+  L.push('## Instructions for Claude Code');
+  L.push('Implement the OPEN change requests below against this UI. Each item notes where in the UI it applies (selected text, a pinned spot, or a general note) and includes any reply thread. Ask clarifying questions wherever a request is ambiguous or could be done more than one way. Items marked DONE are already handled — skip them unless referenced.');
+  L.push('');
+  L.push('---');
+  const block=(c,idx)=>{
+    const out=[];
+    out.push('');
+    out.push('### '+idx+'. ['+(c.done?'DONE':'OPEN')+'] — '+c.author);
+    out.push('- **Where:** '+anchorDesc(c));
+    out.push('- **Request:** '+String(c.body).replace(/\n/g,'\n  '));
+    const reps=repliesOf(c.id);
+    if(reps.length){
+      out.push('- **Thread:**');
+      reps.forEach(r=>out.push('  - '+r.author+': '+String(r.body).replace(/\n/g,' ')));
+    }
+    return out.join('\n');
+  };
+  L.push('');
+  L.push('## Open change requests');
+  L.push(open.length ? open.map((c,i)=>block(c,i+1)).join('\n') : '\n_(none)_');
+  L.push('');
+  L.push('## Resolved (for reference)');
+  L.push(done.length ? done.map((c,i)=>block(c,i+1)).join('\n') : '\n_(none)_');
+  const md=L.join('\n');
+  const safe=(CURRENT.ui.title||'ui').replace(/[^\w-]+/g,'_').slice(0,40);
+  const fname=safe+'_v'+CURRENT.version.version_number+'_review.md';
+  const blob=new Blob([md],{type:'text/markdown'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download=fname;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+  toast('Exported '+fname);
+}
+
+/* ---------- JSX → renderable document ---------- */
+const GLOBALS = {
+  'react':'React','react-dom':'ReactDOM','recharts':'Recharts',
+  'lucide-react':'(window.LucideReact||window.lucideReact||{})',
+  'lodash':'_','d3':'d3'
+};
+function transformImports(code){
+  let out=code;
+  // side-effect imports  import 'x';
+  out=out.replace(/^\s*import\s+['"][^'"]+['"];?\s*$/mg,'');
+  // import * as NS from 'mod'
+  out=out.replace(/import\s+\*\s+as\s+(\w+)\s+from\s*['"]([^'"]+)['"];?/g,(m,ns,mod)=>{
+    const g=GLOBALS[mod]; return g?`const ${ns} = ${g};`:`const ${ns} = {};`;
+  });
+  // import Def, { named } from 'mod'
+  out=out.replace(/import\s+(\w+)\s*,\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"];?/g,(m,def,named,mod)=>{
+    const g=GLOBALS[mod]||'{}'; let s='';
+    if(!(mod==='react')) s+=`const ${def} = (${g}&&${g}.default)?${g}.default:${g};`;
+    s+=`const {${cleanNamed(named)}} = ${g};`; return s;
+  });
+  // import Def from 'mod'
+  out=out.replace(/import\s+(\w+)\s+from\s*['"]([^'"]+)['"];?/g,(m,def,mod)=>{
+    if(mod==='react'||mod==='react-dom') return ''; // React/ReactDOM already global
+    const g=GLOBALS[mod]||'{}'; return `const ${def} = (${g}&&${g}.default)?${g}.default:${g};`;
+  });
+  // import { named } from 'mod'
+  out=out.replace(/import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"];?/g,(m,named,mod)=>{
+    const g=GLOBALS[mod]||'{}'; return `const {${cleanNamed(named)}} = ${g};`;
+  });
+  // export default  ->  window.__App =
+  out=out.replace(/export\s+default\s+/,'window.__App = ');
+  // strip any stray named exports
+  out=out.replace(/export\s+(const|function|class|let|var)\s+/g,'$1 ');
+  return out;
+}
+function cleanNamed(s){
+  return s.split(',').map(x=>x.trim()).filter(Boolean)
+    .map(x=>x.replace(/\s+as\s+/,':')).join(', ');
+}
+
+function buildDoc(source, type){
+  if(type==='jsx'){
+    const code=transformImports(source);
+    const parts=[];
+    parts.push('<!DOCTYPE html><html><head><meta charset="utf-8">');
+    parts.push('<script src="https://unpkg.com/react@18/umd/react.production.min.js"><\/script>');
+    parts.push('<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"><\/script>');
+    parts.push('<script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>');
+    parts.push('<script src="https://cdn.tailwindcss.com"><\/script>');
+    parts.push('<script src="https://unpkg.com/recharts/umd/Recharts.min.js"><\/script>');
+    parts.push('<script src="https://unpkg.com/lodash/lodash.min.js"><\/script>');
+    parts.push('<script src="https://unpkg.com/lucide-react@latest/dist/umd/lucide-react.js"><\/script>');
+    parts.push('<style>body{margin:0;font-family:system-ui,sans-serif;}#err{padding:22px;color:#b00020;font:13px/1.6 ui-monospace,Menlo,monospace;white-space:pre-wrap;}</style>');
+    parts.push('</head><body><div id="approot"></div><div id="err"></div>');
+    parts.push('<script type="text/babel" data-presets="react">');
+    parts.push('window.onerror=function(m){document.getElementById("err").textContent="Render error: "+m+"\\n\\nThis component may use a library the preview can\'t load. Converting it to HTML before uploading is the reliable path.";};');
+    parts.push('try{');
+    parts.push(code);
+    parts.push('\n;const _R=window.__App;');
+    parts.push('if(!_R){throw new Error("No default export / component found.");}');
+    parts.push('ReactDOM.createRoot(document.getElementById("approot")).render(React.createElement(_R));');
+    parts.push('}catch(e){document.getElementById("err").textContent="Render error: "+(e&&e.message?e.message:e);}');
+    parts.push('<\/script></body></html>');
+    return parts.join('\n');
+  }
+  // html
+  const s=source.trim();
+  if(/^<!doctype/i.test(s)||/^<html[\s>]/i.test(s)) return source;
+  return '<!DOCTYPE html><html><head><meta charset="utf-8"><script src="https://cdn.tailwindcss.com"><\/script><style>body{margin:0;font-family:system-ui,sans-serif;}</style></head><body>'+source+'</body></html>';
+}
+
+/* ---------- load a version into the frame ---------- */
+let _resizeObs=null;
+async function loadVersion(){
+  ACTIVE_CMT=null; PIN_ARMED=false;
+  const frame=$('#ui-frame');
+  if(!CURRENT.version){ frame.srcdoc='<body style="font-family:system-ui;padding:30px;color:#666">No version to show.</body>'; return; }
+  frame.srcdoc = buildDoc(CURRENT.version.source, CURRENT.version.render_type);
+  frame.onload=()=>{ suppressBenignErrors(frame); sizeFrame(); wireSelection(); };
+  await loadComments();
+}
+// Some UIs (and my own resize logic) can emit the harmless
+// "ResizeObserver loop completed with undelivered notifications" message.
+// Swallow it so an embedded UI's error banner doesn't misreport it as a crash.
+function suppressBenignErrors(frame){
+  try{
+    frame.contentWindow.addEventListener('error', function(ev){
+      if(ev && ev.message && ev.message.indexOf('ResizeObserver loop')>=0){
+        ev.stopImmediatePropagation(); ev.preventDefault();
+      }
+    }, true);
+  }catch(e){}
+}
+function sizeFrame(){
+  const frame=$('#ui-frame');
+  try{
+    const doc=frame.contentDocument;
+    let raf=null, last=0;
+    const fit=()=>{
+      const h=Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight, 400);
+      if(Math.abs(h-last)>1){ last=h; frame.style.height=h+'px'; }  // only change when needed → no RO loop
+      placePins();
+    };
+    const schedule=()=>{ if(raf) return; raf=requestAnimationFrame(()=>{ raf=null; fit(); }); };
+    schedule();
+    // JSX/React mounts async — refit a few times, then rely on the observer.
+    let n=0; const iv=setInterval(()=>{ schedule(); if(++n>10) clearInterval(iv); },300);
+    if(_resizeObs) _resizeObs.disconnect();
+    _resizeObs=new ResizeObserver(schedule); _resizeObs.observe(doc.body);
+  }catch(e){ frame.style.height='700px'; }
+}
+
+/* ---------- comments data ---------- */
+async function loadComments(){
+  if(!CURRENT.version){ CURRENT.comments=[]; renderComments(); return; }
+  const c=await sb.from('comments').select('*').eq('version_id',CURRENT.version.id).order('created_at',{ascending:true});
+  CURRENT.comments=c.data||[];
+  refreshAuthorFilter();
+  renderComments(); placePins();
+}
+function topLevel(){ return CURRENT.comments.filter(c=>!c.parent_id); }
+function repliesOf(id){ return CURRENT.comments.filter(c=>c.parent_id===id); }
+function numberOf(id){ return topLevel().findIndex(c=>c.id===id)+1; }
+
+function passesFilter(c){
+  if(FILTER.status==='open'&&c.done) return false;
+  if(FILTER.status==='done'&&!c.done) return false;
+  if(FILTER.author!=='all'&&c.author!==FILTER.author) return false;
+  return true;
+}
+function refreshAuthorFilter(){
+  const sel=$('#author-filter'); if(!sel) return;
+  const names=[...new Set(CURRENT.comments.map(c=>c.author))].sort();
+  const cur=FILTER.author;
+  sel.innerHTML=`<option value="all">Everyone</option>`+names.map(n=>`<option value="${esc(n)}" ${n===cur?'selected':''}>${esc(n)}</option>`).join('');
+}
+function setFilter(k,v,btn){
+  FILTER[k]=v;
+  btn.parentElement.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+  btn.classList.add('on'); renderComments();
+}
+function setAuthorFilter(v){ FILTER.author=v; renderComments(); }
+
+/* ---------- pins on overlay ---------- */
+function placePins(){
+  const ov=$('#overlay'); if(!ov) return;
+  ov.querySelectorAll('.pin').forEach(p=>p.remove());
+  topLevel().forEach(c=>{
+    let a; try{ a=JSON.parse(c.anchor||'{}'); }catch(e){ a={}; }
+    if(a.xFrac==null) return;
+    const pin=document.createElement('div');
+    pin.className='pin'+(c.done?' resolved':'')+(ACTIVE_CMT===c.id?' active':'');
+    pin.id='pin-'+c.id;
+    pin.style.left=(a.xFrac*100)+'%'; pin.style.top=(a.yFrac*100)+'%';
+    pin.textContent=numberOf(c.id);
+    pin.onclick=e=>{ e.stopPropagation(); focusComment(c.id, 'pin'); };
+    ov.appendChild(pin);
+  });
+}
+
+function togglePin(){
+  PIN_ARMED=!PIN_ARMED;
+  const ov=$('#overlay'), btn=$('#pinbtn'), banner=$('#pin-banner');
+  ov.classList.toggle('arming',PIN_ARMED);
+  btn.classList.toggle('on',PIN_ARMED);
+  btn.textContent = PIN_ARMED ? '✕ Cancel pin' : '📍 Drop a comment pin';
+  if(banner) banner.classList.toggle('show',PIN_ARMED);
+  clearSelBtn();
+}
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&PIN_ARMED) togglePin(); });
+document.addEventListener('click',e=>{
+  const ov=$('#overlay'); if(!ov||!PIN_ARMED) return;
+  if(e.target!==ov) return;
+  const rect=ov.getBoundingClientRect();
+  const xFrac=(e.clientX-rect.left)/rect.width, yFrac=(e.clientY-rect.top)/rect.height;
+  PENDING_ANCHOR={xFrac,yFrac};
+  togglePin();
+  openComposerFor(PENDING_ANCHOR, null);
+});
+
+/* ---------- text selection commenting ---------- */
+let _selBtn=null;
+function clearSelBtn(){ if(_selBtn){ _selBtn.remove(); _selBtn=null; } }
+function wireSelection(){
+  const frame=$('#ui-frame'); let doc;
+  try{ doc=frame.contentDocument; }catch(e){ return; }
+  doc.addEventListener('mouseup',()=>{
+    setTimeout(()=>{
+      let sel; try{ sel=doc.getSelection(); }catch(e){ return; }
+      clearSelBtn();
+      if(!sel||sel.isCollapsed||!sel.toString().trim()) return;
+      const range=sel.getRangeAt(0); const rr=range.getBoundingClientRect();
+      const fr=frame.getBoundingClientRect();
+      const ov=$('#overlay');
+      // rr is already in the iframe's own coordinate space; the overlay covers the
+      // iframe 1:1, so these map straight onto overlay-local coordinates.
+      const cx=rr.left+rr.width/2, cy=rr.top+rr.height/2;
+      const xFrac=cx/fr.width, yFrac=cy/fr.height;
+      const quote=sel.toString().trim().slice(0,180);
+      _selBtn=document.createElement('button');
+      _selBtn.className='sel-btn'; _selBtn.textContent='💬 Comment on selection';
+      _selBtn.style.left=cx+'px'; _selBtn.style.top=rr.top+'px';
+      _selBtn.onclick=()=>{ clearSelBtn(); openComposerFor({xFrac,yFrac,quote}, null); };
+      ov.appendChild(_selBtn);
+    },10);
+  });
+}
+
+/* ---------- comment composer (new top-level) ---------- */
+function ctrlEnter(ta, btn){
+  ta.addEventListener('keydown', e=>{
+    if((e.ctrlKey||e.metaKey) && (e.key==='Enter'||e.keyCode===13)){ e.preventDefault(); btn.click(); }
+  });
+}
+function openComposerFor(anchor, _){
+  ensureName(name=>{
+    // temporary composer card at top of list
+    renderComments();
+    const box=$('#comments');
+    const card=document.createElement('div'); card.className='cmt';
+    card.innerHTML=`
+      <div class="cmt-top"><span class="cmt-num">•</span><span class="cmt-who">${esc(name)}</span></div>
+      ${anchor.quote?`<div class="cmt-quote">${esc(anchor.quote)}</div>`:''}
+      <div class="composer">
+        <textarea placeholder="Describe the change or question…  (Ctrl/⌘+Enter to post)" autofocus></textarea>
+        <div class="row">
+          <button class="btn small" id="c-save">Post comment</button>
+          <button class="btn-ghost" id="c-cancel">Cancel</button>
+        </div>
+      </div>`;
+    box.prepend(card);
+    const ta=card.querySelector('textarea'); ta.focus();
+    card.querySelector('#c-cancel').onclick=()=>renderComments();
+    const saveBtn=card.querySelector('#c-save');
+    saveBtn.onclick=async()=>{
+      const body=ta.value.trim(); if(!body){ toast('Write a comment first'); return; }
+      const ins=await sb.from('comments').insert({
+        version_id:CURRENT.version.id, author:name, body,
+        anchor:JSON.stringify(anchor), done:false, parent_id:null
+      });
+      if(ins.error){ toast('Error: '+ins.error.message); return; }
+      await loadComments();
+    };
+    ctrlEnter(ta, saveBtn);
+  });
+}
+
+/* ---------- render comments sidebar ---------- */
+function renderComments(){
+  const box=$('#comments'); if(!box) return;
+  const tops=topLevel().filter(passesFilter);
+  if(!tops.length){
+    const any=topLevel().length;
+    box.innerHTML=`<div class="side-empty">${any?'No comments match this filter.':'No comments yet.<br>Select text or drop a pin on the UI to add the first one.'}</div>`;
+    placePins(); return;
+  }
+  box.innerHTML = tops.map(c=>commentCardHTML(c)).join('');
+  placePins();
+}
+function commentCardHTML(c){
+  const mine = c.author===myName();
+  const reps = repliesOf(c.id);
+  return `<div class="cmt ${c.done?'resolved':''} ${ACTIVE_CMT===c.id?'active':''}" id="cmt-${c.id}" onclick="cardClick(event,'${c.id}')">
+    <div class="cmt-top">
+      <span class="cmt-num">${numberOf(c.id)}</span>
+      <span class="cmt-who">${esc(c.author)}</span>
+      <span class="cmt-time">${timeAgo(c.created_at)}</span>
+      <label class="cmt-check"><input type="checkbox" ${c.done?'checked':''} onchange="toggleDone('${c.id}',this.checked)">Done</label>
+    </div>
+    ${anchorQuote(c)}
+    <div class="cmt-body" id="body-${c.id}">${esc(c.body)}</div>
+    <div class="cmt-tools">
+      <button onclick="openReply('${c.id}')">Reply</button>
+      ${mine?`<button onclick="startEdit('${c.id}')">Edit</button><button onclick="delComment('${c.id}')">Delete</button>`:''}
+    </div>
+    ${reps.length?`<div class="replies">${reps.map(r=>replyHTML(r)).join('')}</div>`:''}
+    <div id="reply-slot-${c.id}"></div>
+  </div>`;
+}
+function replyHTML(r){
+  const mine=r.author===myName();
+  return `<div class="reply" id="cmt-${r.id}">
+    <div class="cmt-top"><span class="cmt-who">${esc(r.author)}</span><span class="cmt-time">${timeAgo(r.created_at)}</span></div>
+    <div class="cmt-body" id="body-${r.id}">${esc(r.body)}</div>
+    ${mine?`<div class="cmt-tools"><button onclick="startEdit('${r.id}')">Edit</button><button onclick="delComment('${r.id}')">Delete</button></div>`:''}
+  </div>`;
+}
+function anchorQuote(c){
+  let a; try{ a=JSON.parse(c.anchor||'{}'); }catch(e){ a={}; }
+  return a.quote?`<div class="cmt-quote">${esc(a.quote)}</div>`:'';
+}
+
+function cardClick(e, id){
+  // ignore clicks on interactive controls inside the card
+  if(e.target.closest('button, input, textarea, select, label, .composer')) return;
+  focusComment(id, 'card');
+}
+
+function focusComment(id, from){
+  ACTIVE_CMT=id;
+  renderComments();               // re-highlights active card + repaints pins
+  // scroll the sidebar to the comment card
+  const card=$('#cmt-'+id);
+  if(card) card.scrollIntoView({behavior:'smooth', block:'center'});
+  // scroll the canvas to the pin and pulse it
+  const pin=$('#pin-'+id);
+  if(pin){
+    pin.scrollIntoView({behavior:'smooth', block:'center'});
+    pin.classList.remove('pulse'); void pin.offsetWidth; pin.classList.add('pulse');
+  } else if(from==='card'){
+    toast('This comment has no pin on the current version');
+  }
+}
+
+/* ---------- replies / edit / delete / done ---------- */
+function openReply(parentId){
+  ensureName(name=>{
+    const slot=$('#reply-slot-'+parentId); if(!slot) return;
+    slot.innerHTML=`<div class="composer" style="margin-top:9px">
+      <textarea placeholder="Reply…"></textarea>
+      <div class="row"><button class="btn small" id="r-save">Reply</button><button class="btn-ghost" id="r-cancel">Cancel</button></div>
+    </div>`;
+    const ta=slot.querySelector('textarea'); ta.focus();
+    slot.querySelector('#r-cancel').onclick=()=>slot.innerHTML='';
+    const rSave=slot.querySelector('#r-save');
+    rSave.onclick=async()=>{
+      const body=ta.value.trim(); if(!body) return;
+      const ins=await sb.from('comments').insert({version_id:CURRENT.version.id, author:name, body, parent_id:parentId, done:false, anchor:null});
+      if(ins.error){ toast('Error: '+ins.error.message); return; }
+      await loadComments();
+    };
+    ctrlEnter(ta, rSave);
+  });
+}
+async function toggleDone(id, done){
+  const up=await sb.from('comments').update({done}).eq('id',id);
+  if(up.error){ toast('Error: '+up.error.message); return; }
+  await loadComments();
+}
+function startEdit(id){
+  const c=CURRENT.comments.find(x=>x.id===id); if(!c) return;
+  const bodyEl=$('#body-'+id); if(!bodyEl) return;
+  bodyEl.innerHTML=`<div class="composer"><textarea>${esc(c.body)}</textarea>
+    <div class="row"><button class="btn small" id="e-save">Save</button><button class="btn-ghost" id="e-cancel">Cancel</button></div></div>`;
+  const ta=bodyEl.querySelector('textarea'); ta.focus();
+  bodyEl.querySelector('#e-cancel').onclick=()=>renderComments();
+  const eSave=bodyEl.querySelector('#e-save');
+  eSave.onclick=async()=>{
+    const body=ta.value.trim(); if(!body) return;
+    const up=await sb.from('comments').update({body}).eq('id',id);
+    if(up.error){ toast('Error: '+up.error.message); return; }
+    await loadComments();
+  };
+  ctrlEnter(ta, eSave);
+}
+async function delComment(id){
+  if(!confirm('Delete this comment? Replies to it will also be removed.')) return;
+  await sb.from('comments').delete().eq('parent_id',id);
+  const del=await sb.from('comments').delete().eq('id',id);
+  if(del.error){ toast('Error: '+del.error.message); return; }
+  if(ACTIVE_CMT===id) ACTIVE_CMT=null;
+  await loadComments();
+}
+
+/* ---------- realtime ---------- */
+function cleanupChannel(){ if(CURRENT.channel){ sb.removeChannel(CURRENT.channel); CURRENT.channel=null; } }
+function subscribeRealtime(){
+  cleanupChannel();
+  if(!CURRENT.version) return;
+  CURRENT.channel = sb.channel('cmts-'+CURRENT.version.id)
+    .on('postgres_changes',{event:'*',schema:'public',table:'comments',filter:'version_id=eq.'+CURRENT.version.id},
+      ()=>loadComments())
+    .subscribe();
+}
+
+window.addEventListener('resize',()=>placePins());
+boot();
+</script>
+</body>
+</html>
