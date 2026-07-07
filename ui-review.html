@@ -120,6 +120,22 @@
   .gate-err.show{display:block;}
   .gate-btn{width:100%;justify-content:center;margin-top:16px;padding:11px;}
 
+  /* Screenshot attachments */
+  .att-strip{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;}
+  .att-thumb{position:relative;width:72px;height:72px;border-radius:8px;overflow:hidden;border:1px solid var(--line2);background:var(--paper);display:flex;align-items:center;justify-content:center;}
+  .att-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+  .att-thumb .att-x{position:absolute;top:2px;right:2px;width:18px;height:18px;border:none;border-radius:50%;background:rgba(40,64,100,.85);color:#fff;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;}
+  .att-spin{width:18px;height:18px;border:2px solid var(--line2);border-top-color:var(--blue);border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .att-add{color:var(--blue);}
+  .composer.drop-hot textarea{border-color:var(--blue);background:#EFF5FD;}
+  .cmt-imgs{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px;}
+  .cmt-img{width:84px;height:84px;object-fit:cover;border-radius:8px;border:1px solid var(--line2);cursor:zoom-in;transition:border-color .12s;}
+  .cmt-img:hover{border-color:var(--blue);}
+  .lightbox{position:fixed;inset:0;background:rgba(20,30,48,.86);display:flex;align-items:center;justify-content:center;z-index:300;padding:30px;cursor:zoom-out;}
+  .lightbox img{max-width:96%;max-height:96%;border-radius:10px;box-shadow:0 12px 50px rgba(0,0,0,.5);}
+  .lightbox .lb-x{position:fixed;top:18px;right:22px;width:38px;height:38px;border:none;border-radius:50%;background:rgba(255,255,255,.15);color:#fff;font-size:22px;cursor:pointer;}
+
   /* Review layout */
   .review{display:flex;height:calc(100vh - 74px);}
   .canvas-col{flex:1;min-width:0;overflow:auto;background:#DfE4EA;padding:22px;}
@@ -1145,6 +1161,61 @@ function wireSelection(){
   });
 }
 
+/* ---------- screenshot attachments (Supabase Storage) ----------
+   Images live in the public 'comment-images' bucket; the comment row stores
+   only a small JSON array of {url, path}. They upload as soon as you add them,
+   then post with the comment. Reviewers see inline thumbnails (click = lightbox). */
+async function uploadImage(file){
+  const ext=((file.name||'').match(/\.(\w+)$/)||[,'png'])[1].toLowerCase();
+  const path=token()+'.'+ext;
+  const up=await sb.storage.from('comment-images').upload(path, file, {contentType:file.type||'image/png', upsert:false});
+  if(up.error) throw up.error;
+  return { url: sb.storage.from('comment-images').getPublicUrl(path).data.publicUrl, path };
+}
+function imgErr(e){
+  const m=(e&&e.message)||String(e);
+  if(/bucket/i.test(m)) return 'Screenshots need a quick storage setup first — run the image SQL, then reload.';
+  return 'Image upload failed: '+m;
+}
+// Add paste / drag-drop / file-picker image attaching to a composer. Returns
+// { get() } → the array of uploaded {url,path} to save with the comment.
+function wireAttachments(composerEl, ta){
+  const list=[];
+  const strip=document.createElement('div'); strip.className='att-strip';
+  ta.insertAdjacentElement('afterend', strip);
+  const input=document.createElement('input'); input.type='file'; input.accept='image/*'; input.multiple=true; input.style.display='none';
+  const addBtn=document.createElement('button'); addBtn.type='button'; addBtn.className='btn-ghost att-add'; addBtn.textContent='📎 Add image';
+  const row=composerEl.querySelector('.row');
+  if(row){ row.appendChild(addBtn); row.appendChild(input); } else { strip.insertAdjacentElement('afterend', addBtn); addBtn.insertAdjacentElement('afterend', input); }
+  async function handleFiles(files){
+    for(const f of files){
+      if(!f || !f.type || !f.type.startsWith('image/')) continue;
+      const t=document.createElement('div'); t.className='att-thumb';
+      t.innerHTML='<span class="att-spin"></span>';
+      strip.appendChild(t);
+      try{
+        const rec=await uploadImage(f);
+        list.push(rec);
+        t.innerHTML='';
+        const img=document.createElement('img'); img.src=rec.url; img.alt='screenshot'; t.appendChild(img);
+        const x=document.createElement('button'); x.type='button'; x.className='att-x'; x.textContent='×'; x.title='Remove';
+        x.onclick=()=>{ const i=list.indexOf(rec); if(i>=0) list.splice(i,1); t.remove(); sb.storage.from('comment-images').remove([rec.path]).catch(()=>{}); };
+        t.appendChild(x);
+      }catch(err){ t.remove(); toast(imgErr(err)); }
+    }
+  }
+  addBtn.onclick=()=>input.click();
+  input.onchange=()=>{ handleFiles([...input.files]); input.value=''; };
+  ta.addEventListener('paste',e=>{
+    const imgs=[...((e.clipboardData&&e.clipboardData.items)||[])].filter(it=>it.type&&it.type.startsWith('image/'));
+    if(imgs.length){ e.preventDefault(); handleFiles(imgs.map(it=>it.getAsFile())); }
+  });
+  ['dragenter','dragover'].forEach(ev=>composerEl.addEventListener(ev,e=>{ e.preventDefault(); composerEl.classList.add('drop-hot'); }));
+  ['dragleave','drop'].forEach(ev=>composerEl.addEventListener(ev,e=>{ e.preventDefault(); composerEl.classList.remove('drop-hot'); }));
+  composerEl.addEventListener('drop',e=>{ const fs=[...((e.dataTransfer&&e.dataTransfer.files)||[])]; if(fs.length) handleFiles(fs); });
+  return { get:()=>list.map(r=>({url:r.url, path:r.path})) };
+}
+
 /* ---------- comment composer (new top-level) ---------- */
 function ctrlEnter(ta, btn){
   ta.addEventListener('keydown', e=>{
@@ -1161,7 +1232,7 @@ function openComposerFor(anchor, _){
       <div class="cmt-top"><span class="cmt-num">•</span><span class="cmt-who">${esc(name)}</span></div>
       ${anchor.quote?`<div class="cmt-quote">${esc(anchor.quote)}</div>`:''}
       <div class="composer">
-        <textarea placeholder="Describe the change or question…  (Ctrl/⌘+Enter to post)" autofocus></textarea>
+        <textarea placeholder="Describe the change or question…  (Ctrl/⌘+Enter to post · paste or drop a screenshot)" autofocus></textarea>
         <div class="row">
           <button class="btn small" id="c-save">Post comment</button>
           <button class="btn-ghost" id="c-cancel">Cancel</button>
@@ -1170,12 +1241,15 @@ function openComposerFor(anchor, _){
     box.prepend(card);
     const ta=card.querySelector('textarea'); ta.focus();
     card.querySelector('#c-cancel').onclick=()=>renderComments();
+    const att=wireAttachments(card.querySelector('.composer'), ta);
     const saveBtn=card.querySelector('#c-save');
     saveBtn.onclick=async()=>{
       const body=ta.value.trim(); if(!body){ toast('Write a comment first'); return; }
+      const imgs=att.get();
       const ins=await sb.from('comments').insert({
         version_id:CURRENT.version.id, author:name, body,
-        anchor:JSON.stringify(anchor), done:false, parent_id:null
+        anchor:JSON.stringify(anchor), done:false, parent_id:null,
+        images: imgs.length?JSON.stringify(imgs):null
       });
       if(ins.error){ toast('Error: '+ins.error.message); return; }
       await loadComments();
@@ -1213,6 +1287,7 @@ function commentCardHTML(c){
     </div>
     ${anchorQuote(c)}
     <div class="cmt-body" id="body-${c.id}">${esc(c.body)}</div>
+    ${commentImages(c)}
     <div class="cmt-tools">
       <button onclick="openReply('${c.id}')">Reply</button>
       ${mine?`<button onclick="startEdit('${c.id}')">Edit</button>`:''}
@@ -1227,12 +1302,29 @@ function replyHTML(r){
   return `<div class="reply" id="cmt-${r.id}">
     <div class="cmt-top"><span class="cmt-who">${esc(r.author)}</span><span class="cmt-time">${timeAgo(r.created_at)}</span></div>
     <div class="cmt-body" id="body-${r.id}">${esc(r.body)}</div>
+    ${commentImages(r)}
     ${(mine||isAdminView())?`<div class="cmt-tools">${mine?`<button onclick="startEdit('${r.id}')">Edit</button>`:''}<button onclick="delComment('${r.id}')">Delete</button></div>`:''}
   </div>`;
 }
 function anchorQuote(c){
   let a; try{ a=JSON.parse(c.anchor||'{}'); }catch(e){ a={}; }
   return a.quote?`<div class="cmt-quote">${esc(a.quote)}</div>`:'';
+}
+function commentImages(c){
+  let arr; try{ arr=JSON.parse(c.images||'[]'); }catch(e){ arr=[]; }
+  if(!Array.isArray(arr)||!arr.length) return '';
+  return `<div class="cmt-imgs">`+arr.map(im=>`<img class="cmt-img" src="${esc(im.url)}" alt="screenshot" loading="lazy" onclick="event.stopPropagation();openLightbox(this.src)">`).join('')+`</div>`;
+}
+function openLightbox(url){
+  const b=document.createElement('div'); b.className='lightbox';
+  const img=document.createElement('img'); img.src=url;
+  const x=document.createElement('button'); x.className='lb-x'; x.textContent='×'; x.title='Close';
+  b.appendChild(img); b.appendChild(x);
+  const close=()=>{ b.remove(); document.removeEventListener('keydown', onKey); };
+  function onKey(e){ if(e.key==='Escape') close(); }
+  b.addEventListener('click', close);
+  document.addEventListener('keydown', onKey);
+  document.body.appendChild(b);
 }
 
 function cardClick(e, id){
@@ -1263,15 +1355,17 @@ function openReply(parentId){
   ensureName(name=>{
     const slot=$('#reply-slot-'+parentId); if(!slot) return;
     slot.innerHTML=`<div class="composer" style="margin-top:9px">
-      <textarea placeholder="Reply…"></textarea>
+      <textarea placeholder="Reply…  (paste or drop a screenshot)"></textarea>
       <div class="row"><button class="btn small" id="r-save">Reply</button><button class="btn-ghost" id="r-cancel">Cancel</button></div>
     </div>`;
     const ta=slot.querySelector('textarea'); ta.focus();
     slot.querySelector('#r-cancel').onclick=()=>slot.innerHTML='';
+    const att=wireAttachments(slot.querySelector('.composer'), ta);
     const rSave=slot.querySelector('#r-save');
     rSave.onclick=async()=>{
       const body=ta.value.trim(); if(!body) return;
-      const ins=await sb.from('comments').insert({version_id:CURRENT.version.id, author:name, body, parent_id:parentId, done:false, anchor:null});
+      const imgs=att.get();
+      const ins=await sb.from('comments').insert({version_id:CURRENT.version.id, author:name, body, parent_id:parentId, done:false, anchor:null, images: imgs.length?JSON.stringify(imgs):null});
       if(ins.error){ toast('Error: '+ins.error.message); return; }
       await loadComments();
     };
@@ -1301,6 +1395,12 @@ function startEdit(id){
 }
 async function delComment(id){
   if(!confirm('Delete this comment? Replies to it will also be removed.')) return;
+  // Best-effort: remove any attached screenshots (this comment + its replies) from storage.
+  const paths=[];
+  CURRENT.comments.filter(x=>x.id===id||x.parent_id===id).forEach(v=>{
+    try{ (JSON.parse(v.images||'[]')).forEach(im=>{ if(im&&im.path) paths.push(im.path); }); }catch(e){}
+  });
+  if(paths.length) sb.storage.from('comment-images').remove(paths).catch(()=>{});
   await sb.from('comments').delete().eq('parent_id',id);
   const del=await sb.from('comments').delete().eq('id',id);
   if(del.error){ toast('Error: '+del.error.message); return; }
