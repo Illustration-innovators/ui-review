@@ -99,7 +99,26 @@
   .radio-row{display:flex;gap:16px;}
   .radio-row label{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:500;color:var(--muted);cursor:pointer;}
   .radio-row input{accent-color:var(--blue);}
+  .check-row{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--navy);cursor:pointer;}
+  .check-row input{accent-color:var(--blue);width:15px;height:15px;cursor:pointer;}
   .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}
+
+  /* Lock control on dashboard rows */
+  .actions .lock-btn{font-size:15px;line-height:1;padding:6px 9px;border:1px solid var(--line2);border-radius:8px;background:#fff;}
+  .actions .lock-btn.on{border-color:var(--gold);background:var(--gold-soft);}
+  .actions .lock-btn:hover{border-color:var(--navy2);}
+
+  /* Password gate (reviewer) */
+  .gate{max-width:440px;margin:70px auto;padding:0 26px;}
+  .gate-card{padding:34px 32px;text-align:center;}
+  .gate-lock{font-size:34px;margin-bottom:12px;}
+  .gate-card h2{font-size:20px;font-weight:700;margin:6px 0 8px;color:var(--navy);}
+  .gate-card p{font-size:13px;color:var(--muted);margin-bottom:18px;line-height:1.6;}
+  .gate-card input[type=password]{width:100%;border:1px solid var(--line2);border-radius:9px;padding:11px 13px;font-family:inherit;font-size:14px;color:var(--navy);background:var(--paper);text-align:center;}
+  .gate-card input[type=password]:focus{outline:none;border-color:var(--blue);background:#fff;}
+  .gate-err{display:none;color:var(--pin);font-size:12.5px;font-weight:600;margin-top:10px;}
+  .gate-err.show{display:block;}
+  .gate-btn{width:100%;justify-content:center;margin-top:16px;padding:11px;}
 
   /* Review layout */
   .review{display:flex;height:calc(100vh - 74px);}
@@ -251,6 +270,31 @@ function timeAgo(iso){
 }
 let _toastT;
 function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(_toastT); _toastT=setTimeout(()=>t.classList.remove('show'),2200); }
+
+/* ---------- optional per-UI password protection ----------
+   NOTE: this is a LIGHT gate to deter casual/accidental access, NOT real
+   security. The hash comparison runs entirely client-side (see sha256Hex), so
+   anyone who reads this file's source could bypass it. Don't use it to protect
+   anything sensitive — the UI source still lives in the database either way. */
+async function sha256Hex(str){
+  const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function randSalt(){
+  const a=new Uint8Array(16); crypto.getRandomValues(a);
+  return [...a].map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function pwKey(uiId){ return 'uireview_pw_'+uiId; }
+// Unlocked only if this device's stored hash still matches the current one — so
+// changing or removing the password automatically re-locks every device.
+function isUnlocked(ui){ return !!ui.password_hash && localStorage.getItem(pwKey(ui.id))===ui.password_hash; }
+function markUnlocked(ui){ localStorage.setItem(pwKey(ui.id), ui.password_hash); }
+function lockErr(e){
+  const m=e.message||String(e);
+  if(/column .*(is_protected|password_hash|password_salt).* does not exist|schema cache/i.test(m))
+    return 'Password columns need a quick database update first — run the password SQL, then reload.';
+  return 'Error: '+m;
+}
 
 /* ---------- reviewer identity (name once, per device) ---------- */
 function myName(){ return localStorage.getItem('uireview_name')||''; }
@@ -411,6 +455,7 @@ function rowHTML(u){
     </div>
     <div class="actions">
       <select class="group-select" title="Group" onchange="moveUI('${u.id}',this.value)">${opts}</select>
+      <button class="lock-btn ${u.is_protected?'on':''}" title="${u.is_protected?'Password protected — click to manage':'No password — click to add one'}" onclick="openLockModal('${u.id}')">${u.is_protected?'🔒':'🔓'}</button>
       <button class="btn-outline btn small" onclick="copyLink('${u.share_token}')">Copy link</button>
       <button class="btn-outline btn small" onclick="openAddVersion('${u.id}')">Add version</button>
       <button class="btn small" onclick="openReview('${u.share_token}', true)">Open review</button>
@@ -471,6 +516,40 @@ function groupErr(e){
 function copyLink(tok){
   const url = location.origin + location.pathname + '?r=' + tok;
   navigator.clipboard.writeText(url).then(()=>toast('Share link copied')).catch(()=>prompt('Copy this link:',url));
+}
+
+/* ---------- set / change / remove a UI's password (admin) ---------- */
+function openLockModal(uiId){
+  const u=findUI(uiId); if(!u) return;
+  const back=modalShell(`
+    <h3>${u.is_protected?'Change password':'Add a password'}</h3>
+    <div class="sub">for <b>${esc(u.title)}</b> — a light gate before the share link opens. ${u.is_protected?'Enter a new password to change it, or remove protection below.':'Reviewers will need it to open the link; opening from this dashboard always bypasses it.'}</div>
+    <div class="field">
+      <label>${u.is_protected?'New password':'Password'}</label>
+      <input type="text" id="lk-pw" placeholder="Password reviewers must enter" />
+    </div>
+    <div class="modal-actions">
+      ${u.is_protected?`<button class="btn-outline btn" id="lk-remove" style="margin-right:auto;color:var(--pin);border-color:#F3C9C6;">Remove password</button>`:''}
+      <button class="btn-outline btn" onclick="this.closest('.modal-back').remove()">Cancel</button>
+      <button class="btn" id="lk-save">${u.is_protected?'Update password':'Protect UI'}</button>
+    </div>`);
+  const pw=back.querySelector('#lk-pw'); pw.focus();
+  const save=async()=>{
+    const val=pw.value.trim();
+    if(!val){ toast('Enter a password'); return; }
+    const salt=randSalt();
+    const up=await sb.from('uis').update({is_protected:true, password_salt:salt, password_hash:await sha256Hex(salt+val)}).eq('id',uiId);
+    if(up.error){ toast(lockErr(up.error)); return; }
+    back.remove(); toast('Password set'); renderDashboard();
+  };
+  back.querySelector('#lk-save').onclick=save;
+  pw.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); save(); } });
+  const rm=back.querySelector('#lk-remove');
+  if(rm) rm.onclick=async()=>{
+    const up=await sb.from('uis').update({is_protected:false, password_hash:null, password_salt:null}).eq('id',uiId);
+    if(up.error){ toast(lockErr(up.error)); return; }
+    back.remove(); toast('Password removed'); renderDashboard();
+  };
 }
 
 /* ---------- Add UI / Add version modals ---------- */
@@ -535,11 +614,22 @@ function openAddUI(){
     <h3>Add a UI for review</h3>
     <div class="sub">Creates one permanent share link. You can upload more versions to it later.</div>
     ${sourceFormHTML()}
+    <div class="field">
+      <label class="check-row"><input type="checkbox" id="f-protect"> Require a password to open the share link</label>
+      <div id="pw-wrap" style="display:none;margin-top:8px;">
+        <input type="text" id="f-pw" placeholder="Password reviewers must enter" />
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="btn-outline btn" onclick="this.closest('.modal-back').remove()">Cancel</button>
       <button class="btn" id="f-save">Create & get link</button>
     </div>`);
   wireDropzone(back);
+  const protectCb=back.querySelector('#f-protect');
+  protectCb.onchange=()=>{
+    back.querySelector('#pw-wrap').style.display=protectCb.checked?'block':'none';
+    if(protectCb.checked) back.querySelector('#f-pw').focus();
+  };
   back.querySelector('#f-save').onclick=async()=>{
     const title=back.querySelector('#f-title').value.trim();
     const src=back.querySelector('#f-src').value;
@@ -547,8 +637,15 @@ function openAddUI(){
     if(!src.trim()){ toast('Add the UI source'); return; }
     const rtype=chosenType(back, src);
     const tok=token();
-    const ins=await sb.from('uis').insert({title, share_token:tok}).select().single();
-    if(ins.error){ toast('Error: '+ins.error.message); return; }
+    // Optional password protection — only applied if the box is checked AND a password was typed.
+    let pwFields={is_protected:false};
+    const pw=back.querySelector('#f-pw').value;
+    if(protectCb.checked && pw.trim()){
+      const salt=randSalt();
+      pwFields={is_protected:true, password_salt:salt, password_hash:await sha256Hex(salt+pw)};
+    }
+    const ins=await sb.from('uis').insert({title, share_token:tok, ...pwFields}).select().single();
+    if(ins.error){ toast(lockErr(ins.error)); return; }
     const v=await sb.from('versions').insert({ui_id:ins.data.id, version_number:1, source:src, render_type:rtype});
     if(v.error){ toast('Error: '+v.error.message); return; }
     back.remove();
@@ -591,6 +688,14 @@ async function openReview(tok, isAdmin){
   ROOT.innerHTML = `<div class="wrap"><div class="empty">Loading review…</div></div>`;
   const ui=await sb.from('uis').select('*').eq('share_token',tok).single();
   if(ui.error||!ui.data){ ROOT.innerHTML=`<div class="wrap"><div class="empty"><div class="big">Link not found</div>This review link is invalid or was removed.</div></div>`; $('#hdr-title').textContent='UI Review'; return; }
+  // Light password gate — admins (opened from the dashboard) and already-unlocked
+  // devices skip it. This is casual access control only, not real security.
+  if(ui.data.is_protected && !isAdmin && !isUnlocked(ui.data)){
+    CURRENT.ui=ui.data;
+    $('#hdr-title').textContent=ui.data.title;
+    renderPasswordGate(ui.data, tok, isAdmin);
+    return;
+  }
   const vs=await sb.from('versions').select('*').eq('ui_id',ui.data.id).order('version_number',{ascending:true});
   CURRENT.ui=ui.data; CURRENT.versions=vs.data||[];
   CURRENT.version = CURRENT.versions[CURRENT.versions.length-1] || null;
@@ -598,6 +703,39 @@ async function openReview(tok, isAdmin){
   renderReviewShell(isAdmin);
   await loadVersion();
   subscribeRealtime();
+}
+
+// Branded password gate shown to reviewers before a protected UI loads.
+function renderPasswordGate(ui, tok, isAdmin){
+  renderWhoami();
+  ROOT.innerHTML=`
+    <div class="gate">
+      <div class="gate-card card">
+        <div class="gate-lock">🔒</div>
+        <div class="eyebrow">Password required</div>
+        <h2>${esc(ui.title)}</h2>
+        <p>This review is password-protected. Enter the password to open it.</p>
+        <input type="password" id="gate-pw" placeholder="Password" autocomplete="off" />
+        <div class="gate-err" id="gate-err">Incorrect password. Try again.</div>
+        <button class="btn gate-btn" id="gate-go">Unlock</button>
+      </div>
+    </div>`;
+  const input=$('#gate-pw'), err=$('#gate-err');
+  input.focus();
+  const attempt=async()=>{
+    const pw=input.value;
+    if(!pw) return;
+    const hash=await sha256Hex((ui.password_salt||'')+pw);
+    if(hash===ui.password_hash){
+      markUnlocked(ui);
+      openReview(tok, isAdmin);   // re-enter; isUnlocked() now passes → normal review view
+    }else{
+      err.classList.add('show');
+      input.value=''; input.focus();
+    }
+  };
+  $('#gate-go').onclick=attempt;
+  input.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); attempt(); } });
 }
 
 function renderReviewShell(isAdmin){
