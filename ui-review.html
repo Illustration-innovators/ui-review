@@ -1196,6 +1196,11 @@ function renderComments(){
   box.innerHTML = tops.map(c=>commentCardHTML(c)).join('');
   placePins();
 }
+// Admins (opened the review from the dashboard) may moderate — i.e. delete
+// anyone's comments. Reviewers on a share link can only touch their own. This
+// is a UI-level privilege only, matching the app's other client-side gates.
+function isAdminView(){ return CURRENT.view==='review'; }
+
 function commentCardHTML(c){
   const mine = c.author===myName();
   const reps = repliesOf(c.id);
@@ -1210,7 +1215,8 @@ function commentCardHTML(c){
     <div class="cmt-body" id="body-${c.id}">${esc(c.body)}</div>
     <div class="cmt-tools">
       <button onclick="openReply('${c.id}')">Reply</button>
-      ${mine?`<button onclick="startEdit('${c.id}')">Edit</button><button onclick="delComment('${c.id}')">Delete</button>`:''}
+      ${mine?`<button onclick="startEdit('${c.id}')">Edit</button>`:''}
+      ${(mine||isAdminView())?`<button onclick="delComment('${c.id}')">Delete</button>`:''}
     </div>
     ${reps.length?`<div class="replies">${reps.map(r=>replyHTML(r)).join('')}</div>`:''}
     <div id="reply-slot-${c.id}"></div>
@@ -1221,7 +1227,7 @@ function replyHTML(r){
   return `<div class="reply" id="cmt-${r.id}">
     <div class="cmt-top"><span class="cmt-who">${esc(r.author)}</span><span class="cmt-time">${timeAgo(r.created_at)}</span></div>
     <div class="cmt-body" id="body-${r.id}">${esc(r.body)}</div>
-    ${mine?`<div class="cmt-tools"><button onclick="startEdit('${r.id}')">Edit</button><button onclick="delComment('${r.id}')">Delete</button></div>`:''}
+    ${(mine||isAdminView())?`<div class="cmt-tools">${mine?`<button onclick="startEdit('${r.id}')">Edit</button>`:''}<button onclick="delComment('${r.id}')">Delete</button></div>`:''}
   </div>`;
 }
 function anchorQuote(c){
