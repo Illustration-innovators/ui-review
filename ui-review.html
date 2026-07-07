@@ -151,6 +151,7 @@
   .pin{position:absolute;transform:translate(-50%,-50%);width:26px;height:26px;border-radius:50% 50% 50% 2px;background:var(--pin);color:#fff;border:2.5px solid #fff;box-shadow:0 2px 8px rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;pointer-events:auto;cursor:pointer;transition:transform .12s;}
   .pin:hover,.pin.active{transform:translate(-50%,-50%) scale(1.18);}
   .pin.resolved{background:var(--good);}
+  .pin.stale{opacity:.45;border-style:dashed;}
   .sel-btn{position:absolute;transform:translate(-50%,-115%);background:var(--navy);color:#fff;border:none;border-radius:7px;padding:6px 11px;font-size:11.5px;font-weight:600;pointer-events:auto;box-shadow:0 3px 10px rgba(0,0,0,.28);white-space:nowrap;z-index:20;}
   .sel-btn::after{content:"";position:absolute;left:50%;bottom:-5px;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--navy);}
 
@@ -908,7 +909,7 @@ function buildDoc(source, type){
 }
 
 /* ---------- load a version into the frame ---------- */
-let _resizeObs=null;
+let _resizeObs=null, _mutObs=null;
 async function loadVersion(){
   ACTIVE_CMT=null; PIN_ARMED=false;
   const frame=$('#ui-frame');
@@ -945,6 +946,11 @@ function sizeFrame(){
     let n=0; const iv=setInterval(()=>{ schedule(); if(++n>10) clearInterval(iv); },300);
     if(_resizeObs) _resizeObs.disconnect();
     _resizeObs=new ResizeObserver(schedule); _resizeObs.observe(doc.body);
+    // Reposition pins when the (dynamic) UI shows/hides/moves things — dropdowns,
+    // toggled sections, etc. — even when the overall height doesn't change.
+    if(_mutObs) _mutObs.disconnect();
+    _mutObs=new MutationObserver(schedule);
+    _mutObs.observe(doc.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class','hidden','open','aria-hidden','aria-expanded']});
   }catch(e){ frame.style.height='700px'; }
 }
 
@@ -979,18 +985,88 @@ function setFilter(k,v,btn){
 }
 function setAuthorFilter(v){ FILTER.author=v; renderComments(); }
 
-/* ---------- pins on overlay ---------- */
+/* ---------- element-anchored pins on overlay ----------
+   Each located comment stores, in its anchor JSON, a descriptor of the actual
+   iframe element it was placed on (plus an offset within it) AND a plain x/y
+   fraction as a fallback. On every layout/DOM change we re-resolve the element
+   and move the pin onto it, so pins follow the dynamic UI — and hide when their
+   element isn't currently on screen. Old comments (fraction only) still work. */
+function cssEscape(s){ return (window.CSS&&CSS.escape)?CSS.escape(s):String(s).replace(/[^\w-]/g,'\\$&'); }
+
+// Build a re-resolvable descriptor for an element inside the iframe.
+function describeEl(el, doc){
+  if(!el || el.nodeType!==1 || el===doc.body || el===doc.documentElement) return null;
+  const parts=[]; let n=el;
+  while(n && n.nodeType===1 && n!==doc.body && parts.length<12){
+    if(n.id){ parts.unshift('#'+cssEscape(n.id)); break; }   // an id makes the path stable — stop here
+    let seg=n.tagName.toLowerCase();
+    const par=n.parentNode;
+    if(par){
+      const sibs=[...par.children].filter(c=>c.tagName===n.tagName);
+      if(sibs.length>1) seg+=':nth-of-type('+(sibs.indexOf(n)+1)+')';
+    }
+    parts.unshift(seg); n=n.parentNode;
+  }
+  const text=(el.textContent||'').trim().replace(/\s+/g,' ').slice(0,80);
+  return { path:parts.join('>'), tag:el.tagName.toLowerCase(), id:el.id||'', text };
+}
+
+// Re-find the element for a descriptor in the current iframe DOM (best-effort).
+function resolveDesc(desc, doc){
+  if(!desc) return null;
+  if(desc.id){ try{ const e=doc.getElementById(desc.id); if(e) return e; }catch(_){} }
+  if(desc.path){ try{ const e=doc.querySelector(desc.path); if(e) return e; }catch(_){} }
+  if(desc.text && desc.tag){ try{                            // survives re-renders that shuffle structure
+    const hit=[...doc.getElementsByTagName(desc.tag)]
+      .find(e=>(e.textContent||'').trim().replace(/\s+/g,' ').indexOf(desc.text)>=0);
+    if(hit) return hit;
+  }catch(_){} }
+  return null;
+}
+
+function elVisible(el, doc){
+  if(!el) return false;
+  const cs=doc.defaultView.getComputedStyle(el);
+  if(cs.display==='none'||cs.visibility==='hidden') return false;
+  if(el.offsetParent===null && cs.position!=='fixed') return false;   // an ancestor is display:none
+  const r=el.getBoundingClientRect();
+  return r.width>0 || r.height>0;
+}
+
+// Where should this comment's pin sit? Returns overlay-relative fractions plus a
+// `visible` flag, or null for general (unplaced) comments.
+function anchorPoint(c){
+  let a; try{ a=JSON.parse(c.anchor||'{}'); }catch(e){ a={}; }
+  const frame=$('#ui-frame'); let doc=null;
+  try{ doc=frame&&frame.contentDocument; }catch(e){}
+  if(a.el && doc){
+    const el=resolveDesc(a.el, doc);
+    if(el && elVisible(el, doc)){
+      const r=el.getBoundingClientRect();
+      const W=frame.clientWidth||1, H=frame.clientHeight||1;
+      const ox=a.ox==null?0.5:a.ox, oy=a.oy==null?0.5:a.oy;
+      return { xFrac:(r.left+ox*r.width)/W, yFrac:(r.top+oy*r.height)/H, visible:true };
+    }
+    if(a.xFrac!=null) return { xFrac:a.xFrac, yFrac:a.yFrac, visible:false };  // element hidden/gone
+    return null;
+  }
+  if(a.xFrac!=null) return { xFrac:a.xFrac, yFrac:a.yFrac, visible:true };     // v1 fraction anchor
+  return null;
+}
+
 function placePins(){
   const ov=$('#overlay'); if(!ov) return;
   ov.querySelectorAll('.pin').forEach(p=>p.remove());
   topLevel().forEach(c=>{
-    let a; try{ a=JSON.parse(c.anchor||'{}'); }catch(e){ a={}; }
-    if(a.xFrac==null) return;
+    const pt=anchorPoint(c);
+    if(!pt) return;                                    // general comment — no pin to place
+    if(!pt.visible && c.id!==ACTIVE_CMT) return;       // target hidden → only show when selected
     const pin=document.createElement('div');
-    pin.className='pin'+(c.done?' resolved':'')+(ACTIVE_CMT===c.id?' active':'');
+    pin.className='pin'+(c.done?' resolved':'')+(ACTIVE_CMT===c.id?' active':'')+(pt.visible?'':' stale');
     pin.id='pin-'+c.id;
-    pin.style.left=(a.xFrac*100)+'%'; pin.style.top=(a.yFrac*100)+'%';
+    pin.style.left=(pt.xFrac*100)+'%'; pin.style.top=(pt.yFrac*100)+'%';
     pin.textContent=numberOf(c.id);
+    if(!pt.visible) pin.title='This element isn’t visible in the current state — showing its last position.';
     pin.onclick=e=>{ e.stopPropagation(); focusComment(c.id, 'pin'); };
     ov.appendChild(pin);
   });
@@ -1010,8 +1086,21 @@ document.addEventListener('click',e=>{
   const ov=$('#overlay'); if(!ov||!PIN_ARMED) return;
   if(e.target!==ov) return;
   const rect=ov.getBoundingClientRect();
-  const xFrac=(e.clientX-rect.left)/rect.width, yFrac=(e.clientY-rect.top)/rect.height;
-  PENDING_ANCHOR={xFrac,yFrac};
+  const px=e.clientX-rect.left, py=e.clientY-rect.top;
+  const anchor={ xFrac:px/rect.width, yFrac:py/rect.height };
+  // Tie the pin to the actual element under the click so it tracks the (dynamic) UI.
+  try{
+    const doc=$('#ui-frame').contentDocument;
+    const el=doc.elementFromPoint(px, py);       // px,py are iframe-viewport coords (frame isn't scrolled)
+    const desc=describeEl(el, doc);
+    if(desc){
+      const r=el.getBoundingClientRect();
+      anchor.el=desc;
+      anchor.ox=r.width?(px-r.left)/r.width:0.5;
+      anchor.oy=r.height?(py-r.top)/r.height:0.5;
+    }
+  }catch(_){}
+  PENDING_ANCHOR=anchor;
   togglePin();
   openComposerFor(PENDING_ANCHOR, null);
 });
@@ -1035,10 +1124,22 @@ function wireSelection(){
       const cx=rr.left+rr.width/2, cy=rr.top+rr.height/2;
       const xFrac=cx/fr.width, yFrac=cy/fr.height;
       const quote=sel.toString().trim().slice(0,180);
+      const anchor={xFrac,yFrac,quote};
+      // Anchor to the element containing the selection so the pin tracks it.
+      let cont=range.commonAncestorContainer;
+      if(cont && cont.nodeType!==1) cont=cont.parentElement;
+      const desc=describeEl(cont, doc);
+      if(desc){
+        desc.text=quote.slice(0,80);                 // the quote re-finds it best after re-renders
+        const cr=cont.getBoundingClientRect();
+        anchor.el=desc;
+        anchor.ox=cr.width?(cx-cr.left)/cr.width:0.5;
+        anchor.oy=cr.height?(cy-cr.top)/cr.height:0.5;
+      }
       _selBtn=document.createElement('button');
       _selBtn.className='sel-btn'; _selBtn.textContent='💬 Comment on selection';
       _selBtn.style.left=cx+'px'; _selBtn.style.top=rr.top+'px';
-      _selBtn.onclick=()=>{ clearSelBtn(); openComposerFor({xFrac,yFrac,quote}, null); };
+      _selBtn.onclick=()=>{ clearSelBtn(); openComposerFor(anchor, null); };
       ov.appendChild(_selBtn);
     },10);
   });
@@ -1145,8 +1246,9 @@ function focusComment(id, from){
   if(pin){
     pin.scrollIntoView({behavior:'smooth', block:'center'});
     pin.classList.remove('pulse'); void pin.offsetWidth; pin.classList.add('pulse');
+    if(pin.classList.contains('stale')) toast('The element this comment was placed on isn’t visible right now — showing its last position.');
   } else if(from==='card'){
-    toast('This comment has no pin on the current version');
+    toast('This comment isn’t placed on the current version.');
   }
 }
 
