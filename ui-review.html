@@ -114,8 +114,16 @@
   .gate-lock{font-size:34px;margin-bottom:12px;}
   .gate-card h2{font-size:20px;font-weight:700;margin:6px 0 8px;color:var(--navy);}
   .gate-card p{font-size:13px;color:var(--muted);margin-bottom:18px;line-height:1.6;}
-  .gate-card input[type=password]{width:100%;border:1px solid var(--line2);border-radius:9px;padding:11px 13px;font-family:inherit;font-size:14px;color:var(--navy);background:var(--paper);text-align:center;}
-  .gate-card input[type=password]:focus{outline:none;border-color:var(--blue);background:#fff;}
+  .gate-card input[type=password],.gate-card input[type=text]{width:100%;border:1px solid var(--line2);border-radius:9px;padding:11px 13px;font-family:inherit;font-size:14px;color:var(--navy);background:var(--paper);text-align:center;}
+  .gate-card input:focus{outline:none;border-color:var(--blue);background:#fff;}
+
+  /* Dashboard users (Manage access) */
+  .user-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid var(--line);}
+  .user-name{font-size:13px;font-weight:600;color:var(--navy);flex:1;min-width:0;word-break:break-all;}
+  .user-tools{display:flex;gap:4px;flex-shrink:0;}
+  .cred-box{background:var(--gold-soft);border:1px solid #F3D9A8;border-radius:10px;padding:12px 14px;margin-bottom:14px;}
+  .cred-title{font-size:12.5px;font-weight:600;color:var(--navy);margin-bottom:8px;}
+  .cred-pre{background:#fff;border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;color:var(--navy);white-space:pre-wrap;word-break:break-all;margin-bottom:9px;}
   .gate-err{display:none;color:var(--pin);font-size:12.5px;font-weight:600;margin-top:10px;}
   .gate-err.show{display:block;}
   .gate-btn{width:100%;justify-content:center;margin-top:16px;padding:11px;}
@@ -268,7 +276,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 
 const ROOT = document.getElementById('root');
 let sb = null;
-let CURRENT = { view:'dashboard', ui:null, versions:[], version:null, comments:[], channel:null };
+let CURRENT = { view:'dashboard', ui:null, versions:[], version:null, comments:[], channel:null, admin:null };
 let PIN_ARMED = false;
 let ACTIVE_CMT = null;
 let PENDING_ANCHOR = null;   // anchor captured before composer submit
@@ -323,11 +331,14 @@ function ensureName(cb){
   if(entered && entered.trim()){ setName(entered.trim()); cb(entered.trim()); }
 }
 function renderWhoami(){
-  const el=$('#whoami'); const n=myName();
+  const el=$('#whoami'); if(!el) return;
+  const n=myName();
   if(CURRENT.view==='reviewer'||CURRENT.view==='review'){
     el.innerHTML = n
       ? `Commenting as <b>${esc(n)}</b><button onclick="changeName()">change</button>`
       : `<button onclick="changeName()">Set your name</button>`;
+  } else if(CURRENT.view==='dashboard' && CURRENT.admin){
+    el.innerHTML = `Signed in as <b>${esc(CURRENT.admin.username)}</b><button onclick="logoutAdmin()">Log out</button>`;
   } else el.innerHTML='';
 }
 function changeName(){ const n=prompt("Your name:", myName()); if(n&&n.trim()){ setName(n.trim()); if(CURRENT.version) renderComments(); } }
@@ -345,8 +356,186 @@ function boot(){
   catch(e){ renderSetup(); return; }
   const params = new URLSearchParams(location.search);
   const r = params.get('r');
-  if(r) openReview(r, false);
-  else renderDashboard();
+  if(r){ openReview(r, false); return; }   // reviewer share link — no dashboard login
+  requireAdmin();                          // dashboard route — gate behind sign-in
+}
+
+/* ============================================================================
+   DASHBOARD SIGN-IN  (light client-side gate — see the password-protection note;
+   this manages who can conveniently open the dashboard, not a hard security
+   boundary. Accounts live in the dashboard_users table, passwords stored hashed.)
+   ========================================================================== */
+function adminSession(){ try{ return JSON.parse(localStorage.getItem('uireview_admin')||'null'); }catch(e){ return null; } }
+function setAdminSession(u){ localStorage.setItem('uireview_admin', JSON.stringify({username:u.username, hash:u.password_hash})); }
+function clearAdminSession(){ localStorage.removeItem('uireview_admin'); }
+function logoutAdmin(){ clearAdminSession(); CURRENT.admin=null; requireAdmin(); }
+
+function usersErr(e){
+  const m=(e&&e.message)||String(e);
+  if(/relation .*dashboard_users.* does not exist|schema cache/i.test(m)) return 'Dashboard accounts need a quick database update first — run the users SQL, then reload.';
+  if(/duplicate key|unique/i.test(m)) return 'That username is already taken.';
+  return 'Error: '+m;
+}
+// Avoids look-alike characters so pasted passwords are easy to read.
+function genPassword(){
+  const cs='abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const a=new Uint8Array(14); crypto.getRandomValues(a);
+  return [...a].map(b=>cs[b%cs.length]).join('');
+}
+function credText(username,pw){ return `Illustrata UI Review — dashboard access\nURL: ${location.origin+location.pathname}\nUsername: ${username}\nPassword: ${pw}`; }
+function copyCreds(username,pw){ const t=credText(username,pw); navigator.clipboard.writeText(t).then(()=>toast('Credentials copied')).catch(()=>prompt('Copy these credentials:',t)); }
+
+// Decide what the dashboard route shows: setup-needed, first-account, sign-in, or the dashboard.
+async function requireAdmin(){
+  ROOT.innerHTML = `<div class="wrap"><div class="empty">Loading…</div></div>`;
+  const res=await sb.from('dashboard_users').select('*');
+  if(res.error){ renderUsersSetupNeeded(res.error); return; }
+  const users=res.data||[];
+  if(!users.length){ renderFirstAdmin(); return; }
+  const s=adminSession();
+  if(s){
+    const me=users.find(u=>u.username===s.username && u.password_hash===s.hash);
+    if(me){ CURRENT.admin=me; renderDashboard(); return; }   // valid session (re-locks if pw changed)
+  }
+  renderLogin();
+}
+
+function renderUsersSetupNeeded(err){
+  CURRENT.view='login'; $('#hdr-title').textContent='Setup'; renderWhoami();
+  ROOT.innerHTML=`<div class="setup"><div class="card">
+    <h2>One more setup step</h2>
+    <p>Dashboard sign-in needs a small database table. Run the users SQL (provided with this update) in your Supabase SQL editor, then reload this page.</p>
+    <p style="margin-bottom:0;color:var(--muted-ink);">${esc((err&&err.message)||'')}</p>
+  </div></div>`;
+}
+
+function renderLogin(){
+  CURRENT.view='login'; $('#hdr-title').textContent='Sign in'; renderWhoami();
+  ROOT.innerHTML=`
+    <div class="gate"><div class="gate-card card">
+      <div class="gate-lock">🔐</div>
+      <div class="eyebrow">Dashboard access</div>
+      <h2>Sign in</h2>
+      <p>Enter your dashboard username and password.</p>
+      <input type="text" id="lg-user" placeholder="Username" autocomplete="username" />
+      <input type="password" id="lg-pw" placeholder="Password" autocomplete="current-password" style="margin-top:10px;" />
+      <div class="gate-err" id="lg-err">Incorrect username or password.</div>
+      <button class="btn gate-btn" id="lg-go">Sign in</button>
+    </div></div>`;
+  const user=$('#lg-user'), pw=$('#lg-pw'), err=$('#lg-err');
+  user.focus();
+  const go=async()=>{
+    const uname=(user.value||'').trim().toLowerCase(), p=pw.value;
+    if(!uname||!p) return;
+    const res=await sb.from('dashboard_users').select('*').eq('username',uname).maybeSingle();
+    if(res.error){ err.textContent=usersErr(res.error); err.classList.add('show'); return; }
+    if(!res.data || await sha256Hex(res.data.password_salt+p)!==res.data.password_hash){
+      err.textContent='Incorrect username or password.'; err.classList.add('show'); pw.value=''; pw.focus(); return;
+    }
+    setAdminSession(res.data); CURRENT.admin=res.data; renderDashboard();
+  };
+  $('#lg-go').onclick=go;
+  [user,pw].forEach(el=>el.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } }));
+}
+
+function renderFirstAdmin(){
+  CURRENT.view='login'; $('#hdr-title').textContent='Create account'; renderWhoami();
+  ROOT.innerHTML=`
+    <div class="gate"><div class="gate-card card">
+      <div class="gate-lock">🛡️</div>
+      <div class="eyebrow">First-time setup</div>
+      <h2>Create the owner account</h2>
+      <p>No dashboard accounts exist yet. Create the first one — you can add more people later from the dashboard.</p>
+      <input type="text" id="fa-user" placeholder="Choose a username" autocomplete="username" />
+      <input type="password" id="fa-pw" placeholder="Choose a password" autocomplete="new-password" style="margin-top:10px;" />
+      <div class="gate-err" id="fa-err"></div>
+      <button class="btn gate-btn" id="fa-go">Create account & enter</button>
+    </div></div>`;
+  const user=$('#fa-user'), pw=$('#fa-pw'), err=$('#fa-err');
+  user.focus();
+  const go=async()=>{
+    const uname=(user.value||'').trim().toLowerCase(), p=pw.value;
+    if(!uname){ err.textContent='Enter a username.'; err.classList.add('show'); return; }
+    if(p.length<4){ err.textContent='Use a password of at least 4 characters.'; err.classList.add('show'); return; }
+    const salt=randSalt();
+    const ins=await sb.from('dashboard_users').insert({username:uname, password_salt:salt, password_hash:await sha256Hex(salt+p)}).select().single();
+    if(ins.error){ err.textContent=usersErr(ins.error); err.classList.add('show'); return; }
+    setAdminSession(ins.data); CURRENT.admin=ins.data; renderDashboard();
+  };
+  $('#fa-go').onclick=go;
+  [user,pw].forEach(el=>el.addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); go(); } }));
+}
+
+/* ---------- Manage access (add / reset / delete dashboard users) ---------- */
+function showCred(back, username, pw){
+  const box=back.querySelector('#cred-result'); if(!box) return;
+  box.innerHTML=`<div class="cred-box"><div class="cred-title">✅ Access for <b>${esc(username)}</b> — copy and send it now (this password can't be shown again)</div><pre class="cred-pre"></pre><button class="btn small" id="cred-copy" type="button">Copy to send</button></div>`;
+  box.querySelector('.cred-pre').textContent=credText(username,pw);
+  box.querySelector('#cred-copy').onclick=()=>copyCreds(username,pw);
+  box.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+async function loadUserList(back){
+  const box=back.querySelector('#user-list'); if(!box) return;
+  const res=await sb.from('dashboard_users').select('*').order('created_at',{ascending:true});
+  if(res.error){ box.innerHTML=`<div class="group-empty">${esc(usersErr(res.error))}</div>`; return; }
+  const me=CURRENT.admin;
+  box.innerHTML=(res.data||[]).map(u=>`
+    <div class="user-row" data-id="${u.id}" data-name="${esc(u.username)}">
+      <span class="user-name">${esc(u.username)}${me&&me.id===u.id?' <span class="badge">you</span>':''}</span>
+      <span class="user-tools">
+        <button class="btn-ghost" data-act="reset">Reset password</button>
+        <button class="btn-ghost" data-act="del">Delete</button>
+      </span>
+    </div>`).join('')||`<div class="group-empty">No users yet.</div>`;
+  box.querySelectorAll('.user-row').forEach(row=>{
+    const id=row.getAttribute('data-id'), name=row.getAttribute('data-name');
+    row.querySelector('[data-act=reset]').onclick=async()=>{
+      const pw=genPassword(), salt=randSalt();
+      const up=await sb.from('dashboard_users').update({password_salt:salt, password_hash:await sha256Hex(salt+pw)}).eq('id',id).select().single();
+      if(up.error){ toast(usersErr(up.error)); return; }
+      if(me && me.id===id){ CURRENT.admin=up.data; setAdminSession(up.data); }   // keep myself signed in
+      showCred(back, name, pw); toast('Password reset');
+    };
+    row.querySelector('[data-act=del]').onclick=async()=>{
+      if(me && me.id===id){ toast("You can't delete the account you're signed in as."); return; }
+      if(!confirm('Remove dashboard access for "'+name+'"?')) return;
+      const del=await sb.from('dashboard_users').delete().eq('id',id);
+      if(del.error){ toast(usersErr(del.error)); return; }
+      toast('User removed'); loadUserList(back);
+    };
+  });
+}
+function openUsersModal(){
+  const back=modalShell(`
+    <h3>Dashboard access</h3>
+    <div class="sub">People with these credentials can open the review dashboard. Passwords are stored hashed — you can only copy a password when you create or reset it.</div>
+    <div id="cred-result"></div>
+    <div class="field">
+      <label>Add a user</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <input type="text" id="nu-name" placeholder="username" style="flex:1;min-width:120px;" />
+        <input type="text" id="nu-pw" placeholder="password" style="flex:1;min-width:120px;" />
+        <button class="btn-outline btn small" id="nu-gen" type="button">🎲 Generate</button>
+        <button class="btn small" id="nu-add" type="button">Add user</button>
+      </div>
+    </div>
+    <div id="user-list" style="margin-top:6px;"><div class="group-empty">Loading…</div></div>
+    <div class="modal-actions">
+      <button class="btn-outline btn" onclick="this.closest('.modal-back').remove()">Close</button>
+    </div>`);
+  const nameIn=back.querySelector('#nu-name'), pwIn=back.querySelector('#nu-pw');
+  back.querySelector('#nu-gen').onclick=()=>{ pwIn.value=genPassword(); };
+  back.querySelector('#nu-add').onclick=async()=>{
+    const uname=(nameIn.value||'').trim().toLowerCase(), pw=(pwIn.value||'').trim();
+    if(!uname){ toast('Enter a username'); return; }
+    if(!pw){ toast('Enter or generate a password'); return; }
+    const salt=randSalt();
+    const ins=await sb.from('dashboard_users').insert({username:uname, password_salt:salt, password_hash:await sha256Hex(salt+pw)});
+    if(ins.error){ toast(usersErr(ins.error)); return; }
+    nameIn.value=''; pwIn.value='';
+    showCred(back, uname, pw); loadUserList(back);
+  };
+  loadUserList(back);
 }
 
 /* ============================================================================
@@ -382,6 +571,7 @@ async function renderDashboard(){
       <div class="dash-head">
         <h1>UIs out for review</h1>
         <div class="dash-actions">
+          <button class="btn-outline btn" onclick="openUsersModal()">Manage access</button>
           <button class="btn-outline btn" onclick="openNewGroup()">+ New group</button>
           <button class="btn" onclick="openAddUI()">+ Add a UI</button>
         </div>
