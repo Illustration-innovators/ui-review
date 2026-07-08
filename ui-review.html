@@ -180,7 +180,11 @@
   .sel-btn::after{content:"";position:absolute;left:50%;bottom:-5px;transform:translateX(-50%);border:5px solid transparent;border-top-color:var(--navy);}
 
   /* Comments sidebar */
-  .side{width:390px;flex-shrink:0;background:#fff;border-left:1px solid var(--line);display:flex;flex-direction:column;height:100%;}
+  .side{width:var(--side-w,390px);flex-shrink:0;background:#fff;border-left:1px solid var(--line);display:flex;flex-direction:column;height:100%;}
+  .side-resizer{flex:0 0 7px;align-self:stretch;cursor:col-resize;background:transparent;position:relative;}
+  .side-resizer::before{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:3px;height:34px;border-radius:3px;background:var(--line2);opacity:0;transition:opacity .12s;}
+  .side-resizer:hover,.side-resizer.dragging{background:var(--paper);}
+  .side-resizer:hover::before,.side-resizer.dragging::before{opacity:1;}
   .side-head{padding:16px 18px;border-bottom:1px solid var(--line);}
   .side-head .st{font-size:13px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin-bottom:12px;}
   .filters{display:flex;gap:6px;flex-wrap:wrap;align-items:center;}
@@ -220,6 +224,7 @@
   @media(max-width:820px){
     .review{flex-direction:column;height:auto;}
     .side{width:100%;border-left:none;border-top:1px solid var(--line);height:auto;}
+    .side-resizer{display:none;}
     .canvas-col{height:auto;}
   }
 </style>
@@ -1025,6 +1030,7 @@ function renderReviewShell(isAdmin){
           </div>
         </div>
       </div>
+      <div class="side-resizer" id="side-resizer" title="Drag to resize the comments panel"></div>
       <div class="side">
         <div class="side-head">
           <div class="st">Comments</div>
@@ -1042,6 +1048,33 @@ function renderReviewShell(isAdmin){
         </div>
       </div>
     </div>`;
+  wireSideResize();
+}
+
+// Drag the comments panel's left edge to resize it (clamped; remembered per device).
+function wireSideResize(){
+  const rez=$('#side-resizer'), side=$('.side'), frame=$('#ui-frame');
+  if(!rez||!side) return;
+  const MIN=280, maxW=()=>Math.min(760, Math.max(320, window.innerWidth-360));
+  const apply=w=>side.style.setProperty('--side-w', Math.min(maxW(), Math.max(MIN, w))+'px');
+  const saved=parseInt(localStorage.getItem('uireview_side_w')||'',10);
+  if(saved) apply(saved);
+  rez.addEventListener('mousedown',e=>{
+    e.preventDefault();
+    rez.classList.add('dragging');
+    document.body.style.userSelect='none'; document.body.style.cursor='col-resize';
+    if(frame) frame.style.pointerEvents='none';   // keep mousemove firing while over the iframe
+    const move=ev=>{ apply(window.innerWidth-ev.clientX); placePins(); };
+    const up=()=>{
+      rez.classList.remove('dragging');
+      document.body.style.userSelect=''; document.body.style.cursor='';
+      if(frame) frame.style.pointerEvents='';
+      const cur=parseInt(getComputedStyle(side).width,10); if(cur) localStorage.setItem('uireview_side_w', cur);
+      document.removeEventListener('mousemove',move); document.removeEventListener('mouseup',up);
+      placePins();
+    };
+    document.addEventListener('mousemove',move); document.addEventListener('mouseup',up);
+  });
 }
 
 function switchVersion(vid){
