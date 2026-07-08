@@ -664,6 +664,7 @@ function rowHTML(u){
       <select class="group-select" title="Group" onchange="moveUI('${u.id}',this.value)">${opts}</select>
       <button class="lock-btn ${u.is_protected?'on':''}" title="${u.is_protected?'Password protected — click to manage':'No password — click to add one'}" onclick="openLockModal('${u.id}')">${u.is_protected?'🔒':'🔓'}</button>
       <button class="btn-outline btn small" onclick="copyLink('${u.share_token}')">Copy link</button>
+      <button class="btn-outline btn small" onclick="openVersions('${u.id}')">History</button>
       <button class="btn-outline btn small" onclick="openAddVersion('${u.id}')">Add version</button>
       <button class="btn small" onclick="openReview('${u.share_token}', true)">Open review</button>
       <button class="del" title="Delete UI" onclick="deleteUI('${u.id}')">🗑</button>
@@ -886,10 +887,66 @@ function openAddVersion(uiId){
   };
 }
 
+/* ---------- version history: view + delete specific versions ---------- */
+function openVersions(uiId){
+  const u=findUI(uiId); if(!u) return;
+  const back=modalShell(`
+    <h3>Version history</h3>
+    <div class="sub">for <b>${esc(u.title)}</b> — reviewers on the share link see the <b>latest</b> version. Delete any you don't want available.</div>
+    <div id="ver-list"><div class="group-empty">Loading…</div></div>
+    <div class="modal-actions">
+      <button class="btn-outline btn" onclick="this.closest('.modal-back').remove()">Close</button>
+    </div>`);
+  drawVersionList(back, uiId);
+}
+async function drawVersionList(back, uiId){
+  const box=back.querySelector('#ver-list'); if(!box) return;
+  const vs=(DASH.vByUI[uiId]||[]).slice().sort((a,b)=>b.version_number-a.version_number);
+  const maxNum = vs.length ? Math.max.apply(null, vs.map(v=>v.version_number)) : 0;
+  // per-version top-level comment counts
+  const counts={}; const vids=vs.map(v=>v.id);
+  if(vids.length){
+    const c=await sb.from('comments').select('version_id,parent_id').in('version_id',vids);
+    (c.data||[]).forEach(x=>{ if(x.parent_id) return; counts[x.version_id]=(counts[x.version_id]||0)+1; });
+  }
+  box.innerHTML = vs.length ? vs.map(v=>{
+    const n=counts[v.id]||0;
+    return `<div class="user-row">
+      <span class="user-name">Version ${v.version_number}${v.version_number===maxNum?' <span class="badge open">latest · on link</span>':''}
+        <div style="font-weight:400;color:var(--muted);font-size:11.5px;margin-top:2px;">${n} comment${n===1?'':'s'} · added ${timeAgo(v.created_at)}</div></span>
+      <span class="user-tools">
+        <button class="btn small" data-act="viewv" data-vid="${v.id}">Open</button>
+        <button class="btn-ghost" data-act="delv" data-vid="${v.id}" data-num="${v.version_number}">Delete</button>
+      </span>
+    </div>`;
+  }).join('') : `<div class="group-empty">No versions.</div>`;
+  box.querySelectorAll('[data-act=viewv]').forEach(b=>{
+    b.onclick=()=>{ back.remove(); openReview(findUI(uiId).share_token, true, b.getAttribute('data-vid')); };
+  });
+  box.querySelectorAll('[data-act=delv]').forEach(b=>{
+    b.onclick=async()=>{
+      const vid=b.getAttribute('data-vid'), num=b.getAttribute('data-num');
+      if(vs.length<=1){ toast('This is the only version — delete the UI itself instead.'); return; }
+      const n=counts[vid]||0;
+      if(!confirm('Delete Version '+num+(n?(' and its '+n+' comment'+(n===1?'':'s')):'')+"? This can't be undone.")) return;
+      // best-effort: remove screenshots attached to this version's comments
+      const cs=await sb.from('comments').select('images').eq('version_id',vid);
+      const paths=[]; (cs.data||[]).forEach(c=>{ try{ (JSON.parse(c.images||'[]')).forEach(im=>{ if(im&&im.path) paths.push(im.path); }); }catch(e){} });
+      if(paths.length) sb.storage.from('comment-images').remove(paths).catch(()=>{});
+      await sb.from('comments').delete().eq('version_id',vid);
+      const del=await sb.from('versions').delete().eq('id',vid);
+      if(del.error){ toast('Error: '+del.error.message); return; }
+      toast('Version '+num+' deleted');
+      await renderDashboard();      // refresh underlying data (DASH)
+      drawVersionList(back, uiId);   // refresh this modal
+    };
+  });
+}
+
 /* ============================================================================
    REVIEW VIEW  (reviewer link, or admin "Open review")
    ========================================================================== */
-async function openReview(tok, isAdmin){
+async function openReview(tok, isAdmin, initialVid){
   CURRENT.view = isAdmin ? 'review' : 'reviewer';
   cleanupChannel();
   ROOT.innerHTML = `<div class="wrap"><div class="empty">Loading review…</div></div>`;
@@ -905,7 +962,8 @@ async function openReview(tok, isAdmin){
   }
   const vs=await sb.from('versions').select('*').eq('ui_id',ui.data.id).order('version_number',{ascending:true});
   CURRENT.ui=ui.data; CURRENT.versions=vs.data||[];
-  CURRENT.version = CURRENT.versions[CURRENT.versions.length-1] || null;
+  CURRENT.version = (initialVid && CURRENT.versions.find(v=>v.id===initialVid))
+    || CURRENT.versions[CURRENT.versions.length-1] || null;
   $('#hdr-title').textContent = ui.data.title;
   renderReviewShell(isAdmin);
   await loadVersion();
@@ -1121,8 +1179,29 @@ async function loadVersion(){
   const frame=$('#ui-frame');
   if(!CURRENT.version){ frame.srcdoc='<body style="font-family:system-ui;padding:30px;color:#666">No version to show.</body>'; return; }
   frame.srcdoc = buildDoc(CURRENT.version.source, CURRENT.version.render_type);
-  frame.onload=()=>{ suppressBenignErrors(frame); sizeFrame(); wireSelection(); };
+  frame.onload=()=>{ suppressBenignErrors(frame); interceptLinks(frame); sizeFrame(); wireSelection(); };
   await loadComments();
+}
+// Links inside a srcdoc UI resolve relative to THIS app's URL, so clicking one
+// would navigate the preview frame into the app itself (showing dashboard bits).
+// Keep every link from navigating the frame: in-page #anchors scroll within the
+// preview; anything else opens in a new tab.
+function interceptLinks(frame){
+  let doc; try{ doc=frame.contentDocument; }catch(e){ return; }
+  doc.addEventListener('click', function(e){
+    const a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if(!a) return;
+    const raw = a.getAttribute('href') || '';
+    if(raw.charAt(0)==='#'){
+      e.preventDefault();                       // never resolve '#...' against the parent app URL
+      const id = raw.slice(1);
+      if(id){ let t=null; try{ t=doc.getElementById(id)||doc.querySelector('[name="'+cssEscape(id)+'"]'); }catch(_){}
+        if(t) t.scrollIntoView({behavior:'smooth', block:'start'}); }
+      return;
+    }
+    e.preventDefault();                          // external/relative link → new tab, not the review frame
+    if(a.href){ try{ window.open(a.href,'_blank','noopener'); }catch(_){} }
+  }, true);
 }
 // Some UIs (and my own resize logic) can emit the harmless
 // "ResizeObserver loop completed with undelivered notifications" message.
