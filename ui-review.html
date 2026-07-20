@@ -768,6 +768,7 @@ function openLockModal(uiId){
 /* ---------- Add UI / Add version modals ---------- */
 function detectType(src){
   const s=src.trim();
+  if(/^https?:\/\/\S+$/i.test(s)) return 'embed';   // a lone URL → embed a live page
   if(/export\s+default/.test(s) || /from\s*['"]react['"]/.test(s) || /import\s+React/.test(s)) return 'jsx';
   if(/^<!doctype/i.test(s) || /^<html[\s>]/i.test(s)) return 'html';
   if(/useState\s*\(|useEffect\s*\(/.test(s)) return 'jsx';
@@ -790,7 +791,7 @@ function sourceFormHTML(kind){
     <div class="field">
       <label>UI source</label>
       <div class="dropzone" id="dz">Drag an <b>.html</b> or <b>.jsx</b> file here, or paste below</div>
-      <textarea id="f-src" placeholder="Paste HTML or JSX (React) source here…"></textarea>
+      <textarea id="f-src" placeholder="Paste HTML or JSX (React) source — or an https:// link to embed a live page…"></textarea>
     </div>
     <div class="field">
       <label>How should it render?</label>
@@ -798,7 +799,9 @@ function sourceFormHTML(kind){
         <label><input type="radio" name="rtype" value="auto" checked> Auto-detect</label>
         <label><input type="radio" name="rtype" value="html"> HTML</label>
         <label><input type="radio" name="rtype" value="jsx"> JSX / React</label>
+        <label><input type="radio" name="rtype" value="embed"> Embed link</label>
       </div>
+      <div style="font-size:11px;color:var(--muted);margin-top:8px;line-height:1.5;">Embed link renders a live URL in a frame. The site must allow being embedded, and only <b>pin-drop</b> comments work on embeds (no text-selection or element tracking).</div>
     </div>`;
 }
 
@@ -849,6 +852,8 @@ function openAddUI(){
     if(!title){ toast('Add a title'); return; }
     if(!src.trim()){ toast('Add the UI source'); return; }
     const rtype=chosenType(back, src);
+    if(rtype==='embed' && !/^https?:\/\//i.test(src.trim())){ toast('Enter a full https:// link to embed'); return; }
+    const finalSrc = rtype==='embed' ? src.trim() : src;
     const tok=token();
     // Optional password protection — only applied if the box is checked AND a password was typed.
     let pwFields={is_protected:false};
@@ -859,7 +864,7 @@ function openAddUI(){
     }
     const ins=await sb.from('uis').insert({title, share_token:tok, ...pwFields}).select().single();
     if(ins.error){ toast(lockErr(ins.error)); return; }
-    const v=await sb.from('versions').insert({ui_id:ins.data.id, version_number:1, source:src, render_type:rtype});
+    const v=await sb.from('versions').insert({ui_id:ins.data.id, version_number:1, source:finalSrc, render_type:rtype});
     if(v.error){ toast('Error: '+v.error.message); return; }
     back.remove();
     const url=location.origin+location.pathname+'?r='+tok;
@@ -886,7 +891,9 @@ function openAddVersion(uiId){
     const src=back.querySelector('#f-src').value;
     if(!src.trim()){ toast('Add the UI source'); return; }
     const rtype=chosenType(back, src);
-    const v=await sb.from('versions').insert({ui_id:uiId, version_number:latest+1, source:src, render_type:rtype});
+    if(rtype==='embed' && !/^https?:\/\//i.test(src.trim())){ toast('Enter a full https:// link to embed'); return; }
+    const finalSrc = rtype==='embed' ? src.trim() : src;
+    const v=await sb.from('versions').insert({ui_id:uiId, version_number:latest+1, source:finalSrc, render_type:rtype});
     if(v.error){ toast('Error: '+v.error.message); return; }
     back.remove(); toast('v'+(latest+1)+' added'); renderDashboard();
   };
@@ -1011,6 +1018,7 @@ function renderPasswordGate(ui, tok, isAdmin){
 function renderReviewShell(isAdmin){
   renderWhoami();
   const vs=CURRENT.versions;
+  const isEmbed = CURRENT.version && CURRENT.version.render_type==='embed';
   const verOpts=vs.slice().reverse().map(v=>`<option value="${v.id}" ${v.id===CURRENT.version?.id?'selected':''}>Version ${v.version_number}${v.version_number===vs.length?' (latest)':''}</option>`).join('');
   ROOT.innerHTML = `
     <div class="review">
@@ -1021,7 +1029,9 @@ function renderReviewShell(isAdmin){
           <select class="verselect" id="ver" onchange="switchVersion(this.value)">${verOpts}</select>
           ${isAdmin?'<button class="btn-outline btn small export-btn" onclick="exportForClaude()">⬇ Export for Claude Code</button>':''}
         </div>
-        <div class="pin-help" id="pin-help">Add feedback two ways: <b>select text</b> in the UI and click the popup, or use <b>📍 Drop a comment pin</b> (bottom of the comments panel) to mark any spot.</div>
+        <div class="pin-help" id="pin-help">${isEmbed
+          ? 'This is an <b>embedded live link</b>. Use <b>📍 Drop a comment pin</b> to mark a spot. Text-selection and element tracking aren\'t available on embeds, and a pin marks a screen position — scrolling the embed won\'t move it.'
+          : 'Add feedback two ways: <b>select text</b> in the UI and click the popup, or use <b>📍 Drop a comment pin</b> (bottom of the comments panel) to mark any spot.'}</div>
         <div class="browser">
           <div class="chrome"><span class="dots"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i></span><span class="url">${esc(CURRENT.ui.title)}</span></div>
           <div class="stage">
@@ -1210,10 +1220,30 @@ let _resizeObs=null, _mutObs=null;
 async function loadVersion(){
   ACTIVE_CMT=null; PIN_ARMED=false;
   const frame=$('#ui-frame');
-  if(!CURRENT.version){ frame.srcdoc='<body style="font-family:system-ui;padding:30px;color:#666">No version to show.</body>'; return; }
-  frame.srcdoc = buildDoc(CURRENT.version.source, CURRENT.version.render_type);
-  frame.onload=()=>{ suppressBenignErrors(frame); interceptLinks(frame); sizeFrame(); wireSelection(); };
+  if(_resizeObs){ _resizeObs.disconnect(); _resizeObs=null; }   // drop observers from the previous version
+  if(_mutObs){ _mutObs.disconnect(); _mutObs=null; }
+  if(!CURRENT.version){ frame.removeAttribute('src'); frame.srcdoc='<body style="font-family:system-ui;padding:30px;color:#666">No version to show.</body>'; return; }
+  if(CURRENT.version.render_type==='embed'){
+    // Embedded live link: cross-origin, so we can't introspect its DOM. Only
+    // pin-drop / general comments work — the selection/element paths already
+    // fail-safe when the iframe isn't readable, falling back to x/y anchors.
+    frame.removeAttribute('srcdoc');
+    frame.src = CURRENT.version.source;
+    frame.onload = ()=>{ sizeEmbed(); };
+    sizeEmbed();
+  } else {
+    frame.removeAttribute('src');
+    frame.srcdoc = buildDoc(CURRENT.version.source, CURRENT.version.render_type);
+    frame.onload=()=>{ suppressBenignErrors(frame); interceptLinks(frame); sizeFrame(); wireSelection(); };
+  }
   await loadComments();
+}
+// Embedded links can't report their content height (cross-origin), so give the
+// frame a viewport-sized window that scrolls internally.
+function sizeEmbed(){
+  const frame=$('#ui-frame'); if(!frame) return;
+  frame.style.height = Math.max(700, window.innerHeight-150)+'px';
+  placePins();
 }
 // Links inside a srcdoc UI resolve relative to THIS app's URL, so clicking one
 // would navigate the preview frame into the app itself (showing dashboard bits).
@@ -1721,7 +1751,7 @@ function subscribeRealtime(){
     .subscribe();
 }
 
-window.addEventListener('resize',()=>placePins());
+window.addEventListener('resize',()=>{ if(CURRENT.version && CURRENT.version.render_type==='embed') sizeEmbed(); else placePins(); });
 boot();
 </script>
 </body>
